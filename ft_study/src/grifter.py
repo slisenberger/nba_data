@@ -8,7 +8,7 @@
 import pandas as pd, numpy as np, glob
 D='/home/claude/data'; OUT='/home/user/nba_data/ft_study/results'
 X=pd.read_parquet(f'{D}/xfoul_att.parquet',columns=['season','shooter','z','w','is3','fouled','xf','att_id','kind'])
-names=pd.concat([pd.read_parquet(f) for f in glob.glob(f'{D}/out/names_*.parquet')]).drop_duplicates('pid').set_index('pid').name
+names=pd.concat([pd.read_parquet(f) for f in sorted(glob.glob(f'{D}/out/names_*.parquet'))]).drop_duplicates('pid').set_index('pid').name
 X['grp']=np.where(X.is3==1,'3PA',np.where(X.z=='MID','MID','RIM_PAINT'))
 X['f']=X.fouled*X.w; X['x']=X.xf*X.w
 pre=X.season.isin([2019,2020]); post=X.season.isin([2021,2022])

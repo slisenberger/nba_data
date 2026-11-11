@@ -14,7 +14,7 @@ D='/home/claude/data'; OUT='/home/user/nba_data/ft_study/results'
 B=json.load(open(f'{D}/betas.json'))
 BETA=float(os.environ.get('BETA',B['beta_low'])); DELTA=float(os.environ.get('DELTA',B['delta_poss'])); GAMMA=float(os.environ.get('GAMMA',0))
 print('beta',BETA,'delta',DELTA,'gamma',GAMMA)
-names=pd.concat([pd.read_parquet(f) for f in glob.glob(f'{D}/out/names_*.parquet')]).drop_duplicates('pid').set_index('pid').name
+names=pd.concat([pd.read_parquet(f) for f in sorted(glob.glob(f'{D}/out/names_*.parquet'))]).drop_duplicates('pid').set_index('pid').name
 F=pd.concat([pd.read_parquet(f,columns=['game_id','period','clk','season','fouler','fouler_team','drawer_team','drawer','imputed','action','pen_before','fouler_pf','flips_single','flips_single_on','tf_after']) for f in sorted(glob.glob(f'{D}/cf/cf_fouls_*.parquet'))],ignore_index=True)
 F['shoot']=F.action.isin([2,29]).astype(int)
 # ---- possession context for each foul: possession age, remaining opp possessions in period

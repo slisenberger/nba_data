@@ -8,7 +8,7 @@ OUT='/home/user/nba_data/ft_study/results'
 PO=os.environ.get('PO','')=='1'; TAG='_po' if PO else ''; SRC='out_po' if PO else 'out'
 cols=['game_id','season','shooter','kind','made','is3','fouled','ft_trip','fta','ftm','pts']
 A=pd.concat([pd.read_parquet(f,columns=cols) for f in sorted(glob.glob(f'/home/claude/data/{SRC}/att_*.parquet'))],ignore_index=True)
-names=pd.concat([pd.read_parquet(f) for f in glob.glob('/home/claude/data/out*/names_*.parquet')]).drop_duplicates('pid').set_index('pid').name
+names=pd.concat([pd.read_parquet(f) for f in sorted(glob.glob('/home/claude/data/out*/names_*.parquet'))]).drop_duplicates('pid').set_index('pid').name
 k=A.kind
 A['sa']=k.isin(['fga','and1','fouled_miss']).astype(int)
 A['fga']=k.isin(['fga','and1']).astype(int)

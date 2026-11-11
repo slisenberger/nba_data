@@ -4,7 +4,7 @@
                  foul that season from foul_epa.py (bonus possessions + whistle slope + opponent foul trouble)."""
 import pandas as pd, numpy as np, glob
 D='/home/claude/data'; OUT='/home/user/nba_data/ft_study/results'
-names=pd.concat([pd.read_parquet(f) for f in glob.glob(f'{D}/out/names_*.parquet')]).drop_duplicates('pid').set_index('pid').name
+names=pd.concat([pd.read_parquet(f) for f in sorted(glob.glob(f'{D}/out/names_*.parquet'))]).drop_duplicates('pid').set_index('pid').name
 X=pd.read_parquet(f'{D}/xfoul_att.parquet',columns=['game_id','season','shooter','w','f_w','xf_w','reaves_shot','is3'])
 FE=pd.read_parquet(f'{D}/foul_epa.parquet',columns=['season','shoot','bonus','slope','trouble'])
 Dn=FE[FE.shoot==1].assign(d=lambda t: t.bonus+t.slope+t.trouble).groupby('season').d.mean()

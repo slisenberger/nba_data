@@ -16,9 +16,9 @@ F=F[F.period<=4]
 P['k']=(P.game_id.astype(np.int64)*10+P.period)*100+P.deff%100
 F['k']=(F.game_id.astype(np.int64)*10+F.period)*100+F.fouler_team%100
 P=P.sort_values(['k','start_clk'],ascending=[True,False]).reset_index(drop=True)
-# fouls inside each possession: clk in (end_clk, start_clk]  (a foul at a possession boundary goes to the earlier one)
+# fouls inside each possession: clk in [end_clk, start_clk] (a foul at the start clock, e.g. on the rebound, belongs to the new possession)
 fk=(F.k.to_numpy()*1000.0+(720-F.clk.to_numpy())); fk.sort()
-lo=P.k.to_numpy()*1000.0+(720-P.start_clk.to_numpy()); hi=P.k.to_numpy()*1000.0+(720-P.end_clk.to_numpy())
+lo=P.k.to_numpy()*1000.0+(720-P.start_clk.to_numpy())-1e-6; hi=P.k.to_numpy()*1000.0+(720-P.end_clk.to_numpy())
 P['n_in']=np.searchsorted(fk,hi,side='right')-np.searchsorted(fk,lo,side='right')
 P['j']=P.groupby('k').cumcount()
 ev=P[(P.n_in==1)&(P.def_tf<=2)&(P.end_clk>120)&(P.lq==1)][['k','j']].reset_index()
@@ -37,7 +37,7 @@ S['mbin']=(S.margin.clip(-20,20)//3).astype(int)
 print('clean events',S.ev.nunique(),'rows',len(S),flush=True)
 for r in [-2,-1,0,1,2,3,4]: S[f'r{r}']=(S.rel==r).astype(float)
 xs=[f'r{r}' for r in [-2,-1,0,1,2,3,4]]+['home_off']
-o=feols(S,['pts','pts_fg','pts_ft_shoot','tov'],xs,['ev','tbin','mbin'],'game_id')
+o=feols(S,['pts','pts_fg','pts_ft_shoot','tov'],xs,['ev','tbin'],'game_id')  # no margin control: margin moves with the outcome inside an event
 out=[]
 for y,(B,SE) in o.items():
     for x,b,s in zip(xs,B,SE):

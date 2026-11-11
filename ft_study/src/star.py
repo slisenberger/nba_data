@@ -1,6 +1,6 @@
 import pandas as pd, numpy as np, glob, json
 B=json.load(open('/home/claude/data/betas.json'))  # beta_low, beta_mid, beta_high, delta_poss
-names=pd.concat([pd.read_parquet(f) for f in glob.glob('/home/claude/data/out/names_*.parquet')]).drop_duplicates('pid').set_index('pid').name
+names=pd.concat([pd.read_parquet(f) for f in sorted(glob.glob('/home/claude/data/out/names_*.parquet'))]).drop_duplicates('pid').set_index('pid').name
 S=pd.concat([pd.read_parquet(f) for f in sorted(glob.glob('/home/claude/data/cf/cf_players_*.parquet'))])
 ftm=pd.read_parquet('/home/claude/data/ftm.parquet')
 S=S.merge(ftm,on=['pid','season'],how='left')
