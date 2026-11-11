@@ -157,6 +157,17 @@ def parse_game(g):
                     pf[fouler] = pf.get(fouler, 0) + 1
                 counting = bool(m and m.group(2)) and a not in OFF_FOUL
                 if counting:
+                    # A counting foul by t1 means the other team has (or now gets) the ball. If the possession row
+                    # hasn't switched yet (the foul is the fouled team's first logged event: a fouled miss after a
+                    # made basket, a loose-ball foul on a rebound), open it here, so its team-foul / penalty state
+                    # is stamped BEFORE this foul and the foul is counted in it. (Until Nov 2026 the row opened at
+                    # the following FT, after tf was incremented: 9% of possessions had an inflated def_tf.)
+                    if cur is None or cur["off"] != other[t1]:
+                        if cur is not None:
+                            cur["end_clk"] = last_clk
+                            poss.append(cur)
+                        cur = new_poss(other[t1], last_clk if cur is not None else period_len(p))
+                        cur_off = other[t1]
                     pen_before = in_pen(t1, clk)
                     tf[t1] += 1
                     if clk <= 120:

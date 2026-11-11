@@ -36,7 +36,7 @@ S['pts_ft']=S.pts_ft_shoot+S.pts_ft_bonus+S.pts_ft_other
 st=pd.get_dummies(S.start_type,prefix='st',drop_first=True).astype(float); S=pd.concat([S,st],axis=1)
 ctrl=['home_off']+list(st.columns); res=[]
 outs=['pts','pts_fg','pts_ft','pts_ft_bonus','shoot_foul','any_foul','tov']
-for tfc in ['tf_adj']:   # (def_tf = handoff coding; its results are in res_bonus_gfe.csv)
+for tfc in ['tf_adj']:   # equals def_tf after the parser fix (agreement printed above); handoff-coding results: res_bonus_gfe.csv
     for a,b in [(0,1),(1,2),(2,3),(3,4)]:
         d=S[S[tfc].isin([a,b])].copy(); d['tr']=(d[tfc]==b).astype(int)
         for fl,fes in {'orig':['tbin','mbin','ots','dts'],'game_def':['tbin','mbin','gd']}.items():
