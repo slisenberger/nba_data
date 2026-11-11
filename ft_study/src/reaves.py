@@ -11,8 +11,8 @@ X['fm_logged']=X.w*X.loc_logged*(X.kind=='fouled_miss'); X['fm']=X.w*(X.kind=='f
 # own-FT% version: value each foul above expected at the shooter's own FT% that season instead of the league's
 import json as _j
 _par={int(k):v for k,v in _j.load(open(f'{D}/xfoul_par{SUF}.json')).items()}
-_z=pd.read_parquet(f'{D}/xfoul_att{SUF}.parquet',columns=['z','xf','fouled'])
-X['z']=_z.z.values; X['xf']=_z.xf.values; X['fouled']=_z.fouled.values
+_z=pd.read_parquet(f'{D}/xfoul_att{SUF}.parquet',columns=['z','xf','fouled','dv'])
+X['z']=_z.z.values; X['xf']=_z.xf.values; X['fouled']=_z.fouled.values; X['dv']=_z.dv.values
 X['psi']=[_par[s_]['psi'].get(z_,0.2) for s_,z_ in zip(X.season,X.z)]
 _ft=pd.concat([pd.read_parquet(f'{D}/out/att_{y}.parquet',columns=['shooter','kind','fta','ftm']).assign(season=y) for y in sorted(X.season.unique())])
 _ft=_ft[_ft.kind.isin(['and1','fouled_miss'])]
