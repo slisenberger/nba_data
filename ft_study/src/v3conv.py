@@ -67,7 +67,7 @@ for gid,g in d.groupby('gameId',sort=False):
         if et==2 and r.actionNumber in blk:
             s=blk[r.actionNumber]; p3=int(s[0]); pt3=4 if s[1]=='h' else 5; p3t=[t for t in teams if t!=team][0] if team else np.nan
         h=desc if r.location=='h' else np.nan; v=desc if r.location=='v' else np.nan
-        out.append((int(gid),int(r.actionNumber),et,act,int(r.period),clk(r.clock),h,v,ptype,p1,r.playerName if isplayer else np.nan,p1team,pt2,p2,np.nan,p2t,pt3,p3,np.nan,p3t))
+        out.append((int(gid),int(r.actionNumber),et,act,int(r.period),clk(r.clock),h,v,ptype,p1,(r.playerNameI if isinstance(r.playerNameI,str) else r.playerName) if isplayer else np.nan,p1team,pt2,p2,np.nan,p2t,pt3,p3,np.nan,p3t))
 cols=['GAME_ID','EVENTNUM','EVENTMSGTYPE','EVENTMSGACTIONTYPE','PERIOD','PCTIMESTRING','HOMEDESCRIPTION','VISITORDESCRIPTION','PERSON1TYPE','PLAYER1_ID','PLAYER1_NAME','PLAYER1_TEAM_ID','PERSON2TYPE','PLAYER2_ID','PLAYER2_NAME','PLAYER2_TEAM_ID','PERSON3TYPE','PLAYER3_ID','PLAYER3_NAME','PLAYER3_TEAM_ID']
 O=pd.DataFrame(out,columns=cols)
 assert not O.duplicated(['GAME_ID','EVENTNUM']).any()  # actionNumber kept so shot detail joins on GAME_EVENT_ID
