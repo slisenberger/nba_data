@@ -11,7 +11,8 @@ Problem: a fouled miss has no shot location (no FGA is logged). Solution, per se
   are spread over corner / above-the-break by his 3PA mix times the league foul-rate ratio.
 xF: linear probability model with FEs: zone x season, zone x possession-age bin x start type (transition),
   zone x period x 3-min clock bin, zone x margin bin, zone x bonus state, defense team-season x 2/3,
-  zone x decile of the on-court defenders' shooting-foul rate. Fractional zone rows are weighted.
+  zone x decile of the on-court defenders' shooting-foul rate, zone x seconds since the team's offensive rebound
+  (putback context; added Nov 2026). Fractional zone rows are weighted.
   Referee effects (where the PBP names the crew) are added from a ridge fit of game-level residuals.
 REAVES = sum over attempts of (fouled - xF) * (V_F - V_N): league points of a fouled vs unfouled attempt in that zone
   and season (league FT%), so it values foul drawing only, not the shooter's own FT or finishing skill."""
@@ -23,7 +24,7 @@ import os
 SUF='_imputed' if os.environ.get('FORCE_IMPUTE')=='1' else ''
 if os.environ.get('RESUME')!='1':
     import pyarrow.parquet as pq
-    cols=['game_id','season','evnum','shooter','kind','made','is3','dist','period','clk','elapsed','start_type','margin','def_tf','def_pen','deff','fouled','fouler','ftm','fta','pts']
+    cols=['game_id','season','evnum','shooter','kind','made','is3','dist','period','clk','elapsed','start_type','margin','def_tf','def_pen','deff','fouled','fouler','ftm','fta','pts','since_oreb']
     def dfr_rates(s):
         # defenders' shooting fouls committed per defensive possession (season), shrunk with 200 pseudo-possessions
         tb=pq.read_table(f'{D}/out/poss_{s}.parquet',columns=['def_lu']).column('def_lu').combine_chunks()
@@ -44,7 +45,7 @@ if os.environ.get('RESUME')!='1':
         a['dfr']=np.where(cnt>0,sums/np.maximum(cnt,1),np.nan).astype(np.float32)
         a=a[a.kind.isin(['fga','and1','fouled_miss'])&(a.shooter>0)]
         for c in ('made','is3','def_tf','def_pen','fouled','ftm','fta','pts'): a[c]=a[c].astype(np.int16)
-        for c in ('clk','elapsed'): a[c]=a[c].astype(np.float32)
+        for c in ('clk','elapsed','since_oreb'): a[c]=a[c].astype(np.float32)
         a['kind']=a.kind.astype('category'); a['start_type']=a.start_type.astype('category')
         parts.append(a)
     A=pd.concat(parts,ignore_index=True); del parts; gc.collect()
@@ -192,7 +193,10 @@ if os.environ.get('RESUME')!='1':
     X['f_pen']=zc*10+X.def_pen
     X['f_dts']=X.deff.astype(np.int64)%100000*100000+X.season*10+X.is3
     X['f_dfr']=zc*100+X.dfr_bin
-    fes=['f_zs','f_el','f_cl','f_mb','f_pen','f_dts','f_dfr']
+    # putback context: seconds since the team's offensive rebound in this possession (none, 0-1, 1-3, 3-6, 6+)
+    X['pbb']=np.select([X.since_oreb<0,X.since_oreb<=1,X.since_oreb<=3,X.since_oreb<=6],[0,1,2,3],4)
+    X['f_pb']=zc*10+X.pbb
+    fes=['f_zs','f_el','f_cl','f_mb','f_pen','f_dts','f_dfr','f_pb']
     X['fouled']=X.fouled.astype(float)
     X['xf_base']=X.fouled-fe_resid(X,'fouled',fes,w='w',tol=1e-9)
     print('xf fit done', flush=True)
