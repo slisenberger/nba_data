@@ -18,7 +18,7 @@ names=pd.concat([pd.read_parquet(f) for f in sorted(glob.glob(f'{D}/out/names_*.
 F=pd.concat([pd.read_parquet(f,columns=['game_id','period','clk','season','fouler','fouler_team','drawer_team','drawer','imputed','action','pen_before','fouler_pf','flips_single','flips_single_on','tf_after']) for f in sorted(glob.glob(f'{D}/cf/cf_fouls_*.parquet'))],ignore_index=True)
 F['shoot']=F.action.isin([2,29]).astype(int)
 # ---- possession context for each foul: possession age, remaining opp possessions in period
-P=pd.concat([pd.read_parquet(f'{D}/out/poss_{y}.parquet',columns=['game_id','period','off','start_clk','end_clk','pts']) for y in range(1996,2026)],ignore_index=True)
+P=pd.concat([pd.read_parquet(f'{D}/out/poss_{y}.parquet',columns=['game_id','period','off','home_off','start_clk','end_clk','pts','margin']) for y in range(1996,2026)],ignore_index=True)
 P['dur']=P.start_clk-P.end_clk
 key=lambda g,p,t: (g.astype(np.int64)*10+p.astype(np.int64))*2+(t.astype(np.int64)%2)
 P['k']=key(P.game_id,P.period,P.off); F['k']=key(F.game_id,F.period,F.drawer_team)
@@ -32,6 +32,8 @@ pi=m.pi.to_numpy()
 ok=~np.isnan(pi); pi=np.where(ok,pi,0).astype(int)
 F['age']=np.where(ok,P.start_clk.to_numpy()[pi]-F.clk.to_numpy(),np.nan)
 F['poss_pts']=np.where(ok,P.pts.to_numpy()[pi],np.nan)
+F['margin']=np.where(ok,P.margin.to_numpy()[pi],np.nan)       # drawer team's lead at the start of the possession
+F['home_drawer']=np.where(ok,P.home_off.to_numpy()[pi],np.nan)
 # remaining drawer-team possessions in period that start after the foul (bonus/whistle exposure)
 grp_end=P.groupby('k').cumcount(ascending=False).to_numpy()  # possessions after this one in same k
 F['rem_opp_poss']=np.where(ok,grp_end[pi],np.nan)
@@ -42,8 +44,13 @@ alive=np.array([P.loc[P.dur>a,'pts'].mean() for a in ages])
 F['abin']=np.clip((F.age//2).fillna(0).astype(int),0,len(ages)-1)
 F['ep_alive']=alive[F.abin]
 ns=F[(F.shoot==0)&F.age.notna()]
-cell=ns.groupby(['pen_before','abin']).poss_pts.mean()
-F['ep_after_ns']=[cell.get((p,a),np.nan) for p,a in zip(F.pen_before,F.abin)]
+F['eop']=(F.clk<24).astype(int)     # under 24 s left in the period: no full possession left
+P['eop']=(P.start_clk<24).astype(int)
+alive_e={(e,a):P.loc[(P.dur>ages[a])&(P.eop==e),'pts'].mean() for e in (0,1) for a in range(len(ages))}
+F['ep_alive']=[alive_e.get((e,a),np.nan) for e,a in zip(F.eop,F.abin)]
+ns=F[(F.shoot==0)&F.age.notna()]
+cell=ns.groupby(['pen_before','abin','eop']).poss_pts.mean()
+F['ep_after_ns']=[cell.get((p,a,e),np.nan) for p,a,e in zip(F.pen_before,F.abin,F.eop)]
 # ---- shooting fouls: attempt-level immediate value
 X=pd.read_parquet(f'{D}/xfoul_att.parquet',columns=['game_id','season','kind','z','w','is3','made','pts','att_id','fouler','period','clk','dv','fouled'])
 vn=X[X.kind=='fga'].groupby(['season','z']).pts.mean().rename('VN')
@@ -68,7 +75,11 @@ def lost(p,n):
     if n<=1 or p>4: return 0.0
     if (p,n) in ml: return ml[(p,n)]
     ks=[k for k in ml if k[0]==p and k[1]<=n]; return ml[max(ks)] if ks else 0.0
-F['poss_lost']=[lost(p,n) if f>0 else 0.0 for p,n,f in zip(F.period,F.fouler_pf,F.fouler)]
+MC=pd.read_csv(f'{OUT}/res_minutes_clock.csv')
+mlc={(r.period,r.nth_foul,r.clock_bin):r.marginal_poss_lost for r in MC.itertuples() if r.marginal_poss_lost==r.marginal_poss_lost}
+F['cb']=np.minimum(F.clk//180,3).astype(int)
+F['poss_lost_flat']=[lost(p,n) if f>0 else 0.0 for p,n,f in zip(F.period,F.fouler_pf,F.fouler)]
+F['poss_lost']=[max(mlc.get((p,n,b),fl),0.0) if f>0 and p<=4 else 0.0 for p,n,b,f,fl in zip(F.period,F.fouler_pf,F.cb,F.fouler,F.poss_lost_flat)]
 PT=pd.read_parquet(f'{D}/player_team.parquet')
 PT['rk']=PT.groupby(['team','season']).poss_both.rank(ascending=False,method='first')
 top5=set(zip(PT[PT.rk<=5].pid,PT[PT.rk<=5].season))
@@ -78,23 +89,56 @@ F['bonus']=F.flips_single*BETA
 F['slope']=F.rem_opp_poss.fillna(0)*GAMMA*(F.period<=4)
 F['epa']=F.imm+F.bonus+F.slope+F.trouble
 F['epa_act']=np.where(F.shoot==1,F.imm_act.fillna(F.imm),F.imm)+F.bonus+F.slope+F.trouble
+# ---- win probability (offense / drawer view): logistic in lead / sqrt(time left), home, time-left terms.
+from scipy.optimize import minimize
+P['T']=np.where(P.period<=4,(4-P.period)*720+P.start_clk,P.start_clk)
+gs=P.groupby(['game_id','off']).pts.sum().unstack()
+fin={}
+for g,row in gs.iterrows():
+    v=row.dropna()
+    if len(v)==2: fin[(g,v.index[0])]=v.iloc[0]-v.iloc[1]; fin[(g,v.index[1])]=v.iloc[1]-v.iloc[0]
+P['win']=[fin.get((g,o),np.nan) for g,o in zip(P.game_id,P.off)]
+S=P[P.win.notna()&(P.win!=0)].sample(1500000,random_state=1)
+def feats(m,T,h):
+    st=np.sqrt(T/60+1.0)
+    return np.c_[m/st,h/st,1/st,m/(T/60+1.0)]
+Xw=feats(S.margin.to_numpy(float),S['T'].to_numpy(float),S.home_off.to_numpy(float)*2-1); yw=(S.win>0).to_numpy(float)
+nll=lambda b: np.sum(np.logaddexp(0,Xw@b)-yw*(Xw@b))
+bw=minimize(nll,np.zeros(Xw.shape[1]),method='BFGS').x
+wp=lambda m,T,h: 1/(1+np.exp(-feats(m,T,h)@bw))
+pr=wp(S.margin.to_numpy(float),S['T'].to_numpy(float),S.home_off.to_numpy(float)*2-1)
+print('WP model coefs',bw.round(3),' Brier',round(np.mean((pr-yw)**2),4),' calibration by decile',
+      pd.Series(yw).groupby(pd.qcut(pr,10,labels=False)).mean().round(3).tolist(),flush=True)
+F['T']=np.where(F.period<=4,(4-F.period)*720+F.clk,F.clk)
+m0=F.margin.fillna(0).to_numpy(float); T0=F['T'].to_numpy(float); h0=F.home_drawer.fillna(0.5).to_numpy(float)*2-1
+F['wp_before']=wp(m0,T0,h0)
+F['wpa']=wp(m0+F.epa.to_numpy(),T0,h0)-F.wp_before
+# ---- flags: late intentional fouls (defense trailing, last 2:00 of Q4/OT, non-shooting) and take fouls are the
+# defense's choice, not drawn; garbage time = lead >= 20 in Q4/OT
+F['intentional']=((F.shoot==0)&(F.period>=4)&(F.clk<=120)&(F.margin>0)).astype(int)
+F['take']=F.action.isin([28,31]).astype(int)
+F['garbage']=((F.period>=4)&(F.margin.abs()>=20)).astype(int)
+F['skill']=((F.intentional==0)&(F.take==0)).astype(int)
 F.drop(columns=['k']).to_parquet(f'{D}/foul_epa.parquet')
+print('flags: intentional',round(F.intentional.mean(),4),'take',round(F.take.mean(),4),'garbage',round(F.garbage.mean(),4))
+print('mean poss lost per foul: flat',round(F.poss_lost_flat.mean(),3),' clock-dependent',round(F.poss_lost.mean(),3))
 pd.set_option('display.width',250)
 F['type']=np.where(F.shoot==1,'shooting',np.where(F.pen_before==1,'bonus_nonshoot','nonbonus_nonshoot'))
 print(F.groupby('type')[['imm','bonus','slope','trouble','epa']].mean().round(4).to_string())
 print(F.groupby(['period'])[['bonus','trouble','epa']].mean().round(4).to_string())
 F.groupby(['season','type'])[['imm','bonus','slope','trouble','epa']].mean().round(4).to_csv(f'{OUT}/foul_epa_by_type.csv')
 # ---- drawer careers
-F=F[F.drawer>0]
+F=F[(F.drawer>0)&(F.skill==1)]   # drawn fouls only: no late intentional or take fouls
 on=pd.concat([pd.read_parquet(f,columns=['pid','season','off_poss']) for f in sorted(glob.glob(f'{D}/cf/cf_players_*.parquet'))])
 gp=pd.concat([pd.read_parquet(f'{D}/out/att_{y}.parquet',columns=['game_id','shooter']).assign(season=y) for y in range(1996,2026)])
 gp=gp[gp.shooter>0].groupby('shooter').game_id.nunique().rename('gp')
-C=F.groupby('drawer').agg(fouls=('epa','size'),shoot=('shoot','sum'),epa=('epa','sum'),epa_act=('epa_act','sum'),imm=('imm','sum'),bonus=('bonus','sum'),slope=('slope','sum'),trouble=('trouble','sum'),imputed=('imputed','mean'),first=('season','min'),last=('season','max'))
+C=F.groupby('drawer').agg(wpa=('wpa','sum'),fouls=('epa','size'),shoot=('shoot','sum'),epa=('epa','sum'),epa_act=('epa_act','sum'),imm=('imm','sum'),bonus=('bonus','sum'),slope=('slope','sum'),trouble=('trouble','sum'),imputed=('imputed','mean'),first=('season','min'),last=('season','max'))
 C=C.join(on.groupby('pid').off_poss.sum()).join(gp)
-C['epa_per100']=100*C.epa/C.off_poss; C['epa_per_g']=C.epa/C.gp; C['epa_per_foul']=C.epa/C.fouls
+C['wpa_per_g']=C.wpa/C.gp; C['epa_per100']=100*C.epa/C.off_poss; C['epa_per_g']=C.epa/C.gp; C['epa_per_foul']=C.epa/C.fouls
 C['name']=C.index.map(names)
 C=C[C.off_poss>=20000]
 C.reset_index().rename(columns={'drawer':'pid'}).round(4).to_csv(f'{OUT}/foul_epa_career.csv',index=False)
-cols=['name','first','last','gp','fouls','imm','bonus','slope','trouble','epa','epa_per_g','epa_per100','epa_per_foul','imputed']
+cols=['name','first','last','gp','fouls','imm','bonus','trouble','epa','epa_per_g','epa_per100','epa_per_foul','wpa','wpa_per_g','imputed']
+print(C.sort_values('wpa',ascending=False)[cols].head(15).round(3).to_string())
 print(C.sort_values('epa',ascending=False)[cols].head(30).round(3).to_string())
 print(C.sort_values('epa_per100',ascending=False)[cols].head(20).round(3).to_string())
