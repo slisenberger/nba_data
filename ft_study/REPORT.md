@@ -1,5 +1,21 @@
 # Foul-drawing study: findings (Nov 2026)
 
+> **Current numbers (post-audit rebuild, Nov 11).** The full write-up with methods, assumptions and audit is the shared doc
+> "NBA Foul-Drawing Study: Methods and Findings". Sections below this box are the first (pre-audit) pass and are kept for
+> history; where they differ, these win:
+> - Bonus value: beta = 0.036 per penalty possession with > 2:00 left (0.035-0.038 net of placebos); 0.028 in the last 2:00 / OT
+>   (`results/res_bonus_fix.csv`, `res_bonus_late.csv`). Per-foul slope below the bonus = 0. Technical fouls are no longer counted
+>   as team fouls. Penalty coding check: 99-100% of in-penalty non-shooting fouls are followed by FTs (`penalty_check.csv`).
+> - xFoul: logged foul locations 2016+ (`floc_*`); pre-2016 imputation tuned on 2016+ (shrink 20, dunk/rim split correction);
+>   holdout career REAVES r = 1.000, MAE 4.6 pts (`loc_validation.csv`, `impute_tuning*.csv`).
+> - REAVES per 100 attempts: Harden 8.9, Embiid 7.9, Howard 7.8, Gobert 7.6, Butler 7.0; Harden +2,043 career
+>   (`reaves_career.csv`, `reaves_top10_recent.csv`).
+> - Foul EPA (possession-key bug fixed, Shapley bonus credit, expected-value shooting fouls, hack/intentional/take fouls excluded):
+>   shooting +0.84, non-shooting in bonus +0.61, before bonus +0.06; per 100 poss Embiid 6.7, Doncic 5.6, Giannis 5.5, Shaq 5.5
+>   (`foul_epa_career.csv`). Bench bonus ~0.1 pts/game at most (Giannis, Shaq).
+> - Grifters: rule-window slope 0.51 +- 0.08 vs placebos 0.67-0.91 (`grifter_slopes.csv`); Trae Young fouled 3s 68 -> 24.
+>   The Harden mid-range claim is withdrawn (denominator effect).
+
 Continues `BRIEF.md`. Data: nbastats play-by-play 1996-97 to 2024-25, plus 2025-26 (converted from the v3 format)
 and playoffs 1996-2024; shot detail for locations. Regular season unless stated. Seasons are labelled by start
 year in the CSVs (2018 = 2018-19). Pipeline and file map: `README.md`.
