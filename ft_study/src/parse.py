@@ -123,7 +123,7 @@ def parse_game(g):
                         pts=0, pts_fg=0, pts_ft_shoot=0, pts_ft_bonus=0, pts_ft_other=0,
                         fga=0, fgm=0, fg3a=0, fg3m=0, rim_a=0, rim_m=0, tov=0, stl=0,
                         oreb=0, fta=0, d_shoot_fouls=0, d_nonshoot_fouls=0, d_nonshoot_pen=0,
-                        lq=quality)
+                        lq=quality, last_oreb=None)
 
         score = {home: 0, away: 0} if p == 1 else score_carry
         for r in ev:
@@ -214,6 +214,7 @@ def parse_game(g):
             if t == 4:
                 if cur["fga"] > 0 or cur["fta"] > 0:
                     cur["oreb"] += int(r["PERSON1TYPE"] in (4, 5))
+                    cur["last_oreb"] = clk   # offensive rebound (player or team): putback context for later attempts
                 last_clk = clk
                 continue
             if t in (1, 2):
@@ -224,7 +225,7 @@ def parse_game(g):
                 cur["fga"] += 1; cur["fg3a"] += int(is3); cur["rim_a"] += int(rim and not is3)
                 fgs.append(dict(period=p, clk=clk, evnum=int(r["EVENTNUM"]), off=off, shooter=int(r["PLAYER1_ID"]),
                                 made=int(t == 1), is3=int(is3), dist=dist if dist is not None else -1, fg_action=int(a),
-                                pidx=len(poss), elapsed=cur["start_clk"] - clk, margin=score[off] - score[other[off]],
+                                pidx=len(poss), elapsed=cur["start_clk"] - clk, since_oreb=(cur["last_oreb"] - clk) if cur["last_oreb"] is not None else -1.0, margin=score[off] - score[other[off]],
                                 def_tf=tf[other[off]], def_pen=int(in_pen(other[off], clk)), start_type=cur["start_type"],
                                 def_lu=cur["def_lu"], off_lu=cur["off_lu"], blk=int(r["PERSON3TYPE"] in (4, 5) and r["PLAYER3_ID"] > 0)))
                 if t == 1:
@@ -236,7 +237,7 @@ def parse_game(g):
                 cur["fta"] += 1
                 made = "MISS" not in desc
                 fts.append(dict(period=p, clk=clk, off=off, shooter=int(r["PLAYER1_ID"]), ft_action=int(a), made=int(made),
-                                evnum=int(r["EVENTNUM"]), pidx=len(poss), elapsed=cur["start_clk"] - clk,
+                                evnum=int(r["EVENTNUM"]), pidx=len(poss), elapsed=cur["start_clk"] - clk, since_oreb=(cur["last_oreb"] - clk) if cur["last_oreb"] is not None else -1.0,
                                 margin=score[off] - score[other[off]], def_tf=tf[other[off]], def_pen=int(in_pen(other[off], clk)),
                                 start_type=cur["start_type"], def_lu=cur["def_lu"], off_lu=cur["off_lu"]))
                 if last_def_foul is not None and last_def_foul["drawer_team"] == off and last_def_foul["ft_shooter"] == 0:
