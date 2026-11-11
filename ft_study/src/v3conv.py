@@ -1,11 +1,17 @@
 """Convert nbastatsv3 play-by-play (2025-26) to the nbastats v2 columns parse.py reads.
 v3 differences handled: one row per sub with the outgoing player's id (incoming player named by last name only ->
 resolved against the team's players in that game, preferring one not on the floor); steals / blocks are separate
-rows sharing the turnover's / shot's actionNumber (folded into PLAYER2 / PLAYER3); no fouled player (PLAYER2 of a
-foul is left 0, like 1996-2004, so cf.py imputes); clock 'PT11M36.00S' -> '11:36'."""
+rows sharing the turnover's / shot's actionNumber (folded into PLAYER2 / PLAYER3); no fouled player in v3 (taken from
+the live feed when its CSV is given as a 3rd argument; else PLAYER2 of a foul is left 0 and cf.py imputes); clock 'PT11M36.00S' -> '11:36'."""
 import pandas as pd, numpy as np, sys, re, unicodedata
 norm=lambda x: unicodedata.normalize('NFKD',str(x)).encode('ascii','ignore').decode().strip()
 src,dst=sys.argv[1],sys.argv[2]
+# optional 3rd arg: the NBA live feed (cdnnba) CSV for the same season -> fouled player on fouls (PLAYER2)
+DRAWN={}
+if len(sys.argv)>3:
+    _c=pd.read_csv(sys.argv[3],low_memory=False,usecols=['gameId','actionNumber','actionType','foulDrawnPersonId'])
+    _c=_c[(_c.actionType=='foul')&_c.foulDrawnPersonId.notna()]
+    DRAWN={(int(g),int(a)):int(x) for g,a,x in zip(_c.gameId,_c.actionNumber,_c.foulDrawnPersonId)}
 d=pd.read_csv(src,low_memory=False)
 d['personId']=d.personId.fillna(0).astype('int64'); d['teamId']=d.teamId.fillna(0).astype('int64')
 ET={'Made Shot':1,'Missed Shot':2,'Free Throw':3,'Rebound':4,'Turnover':5,'Foul':6,'Violation':7,'Substitution':8,'Timeout':9,'Jump Ball':10,'Ejection':11,'Instant Replay':18}
@@ -54,6 +60,8 @@ for gid,g in d.groupby('gameId',sort=False):
                 on[team].discard(p1); 
                 if p2: on[team].add(p2)
         elif isplayer and team in on: on[team].add(p1)
+        if et==6 and team and (int(gid),int(r.actionNumber)) in DRAWN:
+            p2=DRAWN[(int(gid),int(r.actionNumber))]; pt2=5 if r.location=='h' else 4; p2t=[t for t in teams if t!=team][0]
         if et==5 and r.actionNumber in steal:
             s=steal[r.actionNumber]; p2=int(s[0]); pt2=4 if s[1]=='h' else 5; p2t=[t for t in teams if t!=team][0] if team else np.nan
         if et==2 and r.actionNumber in blk:

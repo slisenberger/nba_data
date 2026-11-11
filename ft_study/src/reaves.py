@@ -29,3 +29,10 @@ print(C.sort_values('reaves_per100',ascending=False)[cols].head(20).round(2).to_
 print(C.sort_values('reaves')[cols].head(12).round(2).to_string())
 SS=S[S.att>=500]
 print(SS.sort_values('reaves',ascending=False)[['name','season','gp','att','fouls','xf','foe','reaves','reaves_per_g']].head(25).round(2).to_string())
+# ---- top 10 per 100 attempts in recent seasons (min 600 attempts), plus career per 100 (min 3,000)
+T=[]
+for s_ in range(2019,2026):
+    t=S[(S.season==s_)&(S.att>=600)].sort_values('reaves_per100',ascending=False).head(10).copy(); t['rank']=range(1,len(t)+1); T.append(t)
+T=pd.concat(T)[['season','rank','name','gp','att','fouls','xf','foe','reaves','reaves_per100']]
+T.round(2).to_csv(f'{OUT}/reaves_top10_recent{SUF}.csv',index=False)
+print(T[T.season>=2021].round(1).to_string(index=False))

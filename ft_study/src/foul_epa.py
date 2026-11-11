@@ -15,15 +15,15 @@
 import pandas as pd, numpy as np, glob, json, os, gc
 D='/home/claude/data'; OUT='/home/user/nba_data/ft_study/results'
 B=json.load(open(f'{D}/betas.json'))
-BETA=float(os.environ.get('BETA',B['beta_mid'])); DELTA=float(os.environ.get('DELTA',B['delta_poss'])); GAMMA=float(os.environ.get('GAMMA',0))
-print('beta',BETA,'delta',DELTA,'gamma',GAMMA)
+BETA=float(os.environ.get('BETA',B['beta_mid'])); BETA_LATE=float(os.environ.get('BETA_LATE',B.get('beta_late',B['beta_mid']))); DELTA=float(os.environ.get('DELTA',B['delta_poss'])); GAMMA=float(os.environ.get('GAMMA',0))
+print('beta',BETA,'beta_late',BETA_LATE,'delta',DELTA,'gamma',GAMMA)
 names=pd.concat([pd.read_parquet(f) for f in sorted(glob.glob(f'{D}/out/names_*.parquet'))]).drop_duplicates('pid').set_index('pid').name
 F=pd.concat([pd.read_parquet(f,columns=['game_id','period','clk','season','fouler','fouler_team','drawer_team','drawer','imputed','action','pen_before','fouler_pf','flips_single','flips_single_on','tf_after']) for f in sorted(glob.glob(f'{D}/cf/cf_fouls_*.parquet'))],ignore_index=True)
 F['shoot']=F.action.isin([2,29]).astype(int)
 # ---- possession context for each foul: possession age, remaining opp possessions in period
 P=pd.concat([pd.read_parquet(f'{D}/out/poss_{y}.parquet',columns=['game_id','period','off','home_off','start_clk','end_clk','pts','margin']) for y in range(1996,2026)],ignore_index=True)
 P['dur']=P.start_clk-P.end_clk
-key=lambda g,p,t: (g.astype(np.int64)*10+p.astype(np.int64))*2+(t.astype(np.int64)%2)
+key=lambda g,p,t: (g.astype(np.int64)*10+p.astype(np.int64))*100+(t.astype(np.int64)%100)   # team ids 1610612737-66: %100 is unique (was %2: a bug, audit Nov 2026)
 P['k']=key(P.game_id,P.period,P.off); F['k']=key(F.game_id,F.period,F.drawer_team)
 P=P.sort_values(['k','start_clk'],ascending=[True,False]).reset_index(drop=True)
 # possession containing the foul: last possession of the drawer team with start_clk >= clk
@@ -63,9 +63,10 @@ sh=A[A.kind.isin(['and1','fouled_miss'])]
 lgft=sh.ftm.sum()/sh.fta.sum()
 S=X[X.fouled==1].copy()
 S['nft']=np.where(S.kind=='and1',1,np.where(S.is3==1,3,2))
-S['imm_exp']=(S.made*np.where(S.is3==1,3,2)+S.nft*lgft-S.VN)*S.w
+S['imm_exp']=S.dv*S.w     # league value of a fouled vs unfouled attempt from that zone: drawing only (an and-one's make is not credited)
+S['imm_made']=(S.made*np.where(S.is3==1,3,2)+S.nft*lgft-S.VN)*S.w   # old version, credits the make
 S['imm_act']=(S.pts-S.VN)*S.w
-SI=S.groupby('att_id').agg(game_id=('game_id','first'),period=('period','first'),clk=('clk','first'),fouler=('fouler','first'),imm_exp=('imm_exp','sum'),imm_act=('imm_act','sum'))
+SI=S.groupby('att_id').agg(game_id=('game_id','first'),period=('period','first'),clk=('clk','first'),fouler=('fouler','first'),imm_exp=('imm_exp','sum'),imm_made=('imm_made','sum'),imm_act=('imm_act','sum'))
 SI=SI.drop_duplicates(['game_id','period','clk','fouler'])
 F=F.merge(SI,on=['game_id','period','clk','fouler'],how='left')
 print('shooting fouls matched to an attempt',F.loc[F.shoot==1,'imm_exp'].notna().mean().round(4),'league shoot FT%',round(lgft,4))
@@ -88,9 +89,13 @@ PT['rk']=PT.groupby(['team','season']).poss_both.rank(ascending=False,method='fi
 top5=set(zip(PT[PT.rk<=5].pid,PT[PT.rk<=5].season))
 F['fouler_top5']=[int((f,s) in top5) for f,s in zip(F.fouler,F.season)]
 F['trouble']=F.poss_lost*DELTA*F.fouler_top5
-F['bonus']=F.flips_single*BETA
-F['bonus_on']=F.flips_single_on*BETA            # bonus possessions this foul created with the drawer on the floor
-F['bonus_off']=F.bonus-F.bonus_on                  # ... and with him on the bench
+BC=pd.concat([pd.read_parquet(f) for f in sorted(glob.glob(f'{D}/cf/bc_*.parquet'))],ignore_index=True)
+assert len(BC)==len(F), (len(BC),len(F))   # same row order as cf_fouls
+for c in ['bc_main_on','bc_main_off','bc_late_on','bc_late_off']: F[c]=BC[c].to_numpy()
+F['bonus_pivotal_old']=F.flips_single*BETA      # old single-removal credit (over-counts ~1.5x)
+F['bonus']=BETA*(F.bc_main_on+F.bc_main_off)+BETA_LATE*(F.bc_late_on+F.bc_late_off)
+F['bonus_on']=BETA*F.bc_main_on+BETA_LATE*F.bc_late_on      # its share of bonus possessions with the drawer on the floor
+F['bonus_off']=F.bonus-F.bonus_on                              # ... and with him on the bench
 F['slope']=F.rem_opp_poss.fillna(0)*GAMMA*(F.period<=4)
 F['epa']=F.imm+F.bonus+F.slope+F.trouble
 F['epa_act']=np.where(F.shoot==1,F.imm_act.fillna(F.imm),F.imm)+F.bonus+F.slope+F.trouble
@@ -99,9 +104,14 @@ F['epa_act']=np.where(F.shoot==1,F.imm_act.fillna(F.imm),F.imm)+F.bonus+F.slope+
 F['intentional']=((F.shoot==0)&(F.period>=4)&(F.clk<=120)&(F.margin>0)).astype(int)
 F['take_foul']=F.action.isin([28,31]).astype(int)
 F['garbage']=((F.period>=4)&(F.margin.abs()>=20)).astype(int)
-F['skill']=((F.intentional==0)&(F.take_foul==0)).astype(int)
+# hack-a fouls: non-shooting fouls in the bonus on a poor FT shooter (< 55% that season, min 50 FTA) away from the
+# last 2:00 -- the defense's choice, like late intentional fouls (audit)
+_ft=pd.concat([pd.read_parquet(f'{D}/out/att_{y}.parquet',columns=['shooter','fta','ftm']).assign(season=y) for y in range(1996,2026)])
+_ft=_ft.groupby(['shooter','season'])[['fta','ftm']].sum(); _ft=_ft[_ft.fta>=50]; poor=set(_ft[_ft.ftm/_ft.fta<0.55].index)
+F['hack']=((F.shoot==0)&(F.pen_before==1)&(F.intentional==0)&[(d,s_) in poor for d,s_ in zip(F.drawer,F.season)]).astype(int)
+F['skill']=((F.intentional==0)&(F.take_foul==0)&(F.hack==0)).astype(int)
 F.drop(columns=['k']).to_parquet(f'{D}/foul_epa.parquet')
-print('flags: intentional',round(F.intentional.mean(),4),'take',round(F.take_foul.mean(),4),'garbage',round(F.garbage.mean(),4))
+print('flags: hack',round(F.hack.mean(),4),'intentional',round(F.intentional.mean(),4),'take',round(F.take_foul.mean(),4),'garbage',round(F.garbage.mean(),4))
 print('mean poss lost per foul: flat',round(F.poss_lost_flat.mean(),3),' clock-dependent',round(F.poss_lost.mean(),3))
 pd.set_option('display.width',250)
 F['type']=np.where(F.shoot==1,'shooting',np.where(F.pen_before==1,'bonus_nonshoot','nonbonus_nonshoot'))

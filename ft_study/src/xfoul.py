@@ -144,12 +144,19 @@ if os.environ.get('RESUME')!='1':
         if zz not in n_pz: n_pz[zz]=0
         if zz not in a_pz: a_pz[zz]=0
     W={}
-    m=10.0
+    m=20.0   # pseudo and-ones toward the FGA-implied zone mix (tuned on the 2016+ holdout: tune_impute.py)
+    # rim/paint split correction for imputed rows, fitted on logged seasons (tune_impute.py -> dunk_psi.json):
+    # bigs whose and-ones are dunks have more of their fouled misses in the paint than their and-ones suggest
+    DP=json.load(open(f'{D}/dunk_psi.json')); c0,c1,c2=DP['c']
+    _r=fg[fg.z=='RA']; dk_ps=_r.assign(d=_r.sd_action.astype(str).str.contains('Dunk')).groupby(['shooter','season']).d.mean()
+    dk_mean=DP['mdk']; rim_mean=DP['rim_mean']
     for (p,s) in n_pz.index:
         P_=par[s]; n=n_pz.loc[(p,s)]; a=a_pz.loc[(p,s)]
         e2=np.array([n[zz]*P_['arate'][zz] for zz in Z2]); a2=np.array([a[zz] for zz in Z2],float)
         sh=(a2+m*e2/max(e2.sum(),1e-9))/(a2.sum()+m) if e2.sum()>0 else np.array([1/3]*3)
-        w2=sh*np.array([(1-P_['psi'][zz])/P_['psi'][zz] for zz in Z2]); w2=w2/w2.sum()
+        w2=sh*np.array([(1-P_['psi'][zz])/P_['psi'][zz] for zz in Z2])
+        n2=np.array([n[zz] for zz in Z2],float); rs=n2[0]/n2.sum() if n2.sum()>0 else rim_mean
+        w2[1]*=np.exp(c0+c1*(dk_ps.get((p,s),dk_mean)-dk_mean)+c2*(rs-rim_mean)); w2=w2/w2.sum()
         n3=np.array([n[zz]*P_['phi'][zz] for zz in Z3],float)
         w3=n3/n3.sum() if n3.sum()>0 else np.array([.2,.8])
         W[(p,s)]=(w2,w3)

@@ -8,7 +8,7 @@ import sys
 import numpy as np
 import pandas as pd
 
-TECH_FOUL = {12, 13, 16, 17, 18, 19, 25, 30, 10}  # technicals, double personal/tech, delay etc.
+TECH_FOUL = {10, 11, 12, 13, 16, 17, 18, 19, 25, 30, 32}  # technicals (11 T.FOUL, 32 flopping), double personal/tech, delay etc. Their (P#.T#) tag shows the count without adding to it (audit, Nov 2026)
 OFF_FOUL = {4, 26}  # offensive / charge
 SHOOT_FOUL = {2, 29}  # shooting, shooting block
 TECH_FT = {16, 21, 22}

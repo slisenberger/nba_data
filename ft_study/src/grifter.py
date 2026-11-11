@@ -45,18 +45,28 @@ el=W[(W['att_3PA_pre']>=300)&(W['att_3PA_post']>=300)].copy()
 el['z_3PA']=el.d_3PA/el.se_3PA
 el.reset_index().rename(columns={'shooter':'pid'}).round(4).to_csv(f'{OUT}/grifter_rule_change.csv',index=False)
 pd.set_option('display.width',250)
-cols=['name','att_3PA_pre','att_3PA_post','oe_3PA_pre','oe_3PA_post','d_3PA','z_3PA','oe_MID_pre','oe_MID_post','d_MID','ns100_pre','ns100_post','d_ns','lost_low_fouls']
+cols=['name','att_3PA_pre','att_3PA_post','f_3PA_pre','f_3PA_post','oe_3PA_pre','oe_3PA_post','d_3PA','z_3PA','att_MID_pre','att_MID_post','f_MID_pre','f_MID_post','oe_MID_pre','oe_MID_post','d_MID','lost_low_fouls']
 print('league non-shooting drawn per off poss by season',lg.round(4).to_dict())
 print(el.sort_values('d_3PA')[cols].head(25).round(2).to_string())
 print(el.sort_values('lost_low_fouls',ascending=False)[cols].head(15).round(2).to_string())
 print('corr(pre 3PA oe, change)',el[['oe_3PA_pre','d_3PA']].corr().iloc[0,1].round(3),' regression-to-mean benchmark: split-half below')
-# regression to the mean benchmark: same comparison across a non-rule boundary (2017-18 vs 2018-19)
-pa=X.season.isin([2016,2017]); pb=X.season.isin([2018,2019])
-B=win(pa,'pre').join(win(pb,'post'),how='inner').fillna(0)
-for t in ['pre','post']: B[f'oe_{t}']=100*(B[f'f_3PA_{t}']-B[f'x_3PA_{t}'])/B[f'att_3PA_{t}'].clip(lower=1)
-Bel=B[(B.att_3PA_pre>=300)&(B.att_3PA_post>=300)]
-sl=lambda d: np.polyfit(d.oe_pre,d.oe_post,1)[0]
-print('slope of post on pre 3PA fouls-over-expected: placebo 2016-17->2018-19',round(sl(Bel),3),' rule change',round(np.polyfit(el.oe_3PA_pre,el.oe_3PA_post,1)[0],3))
+# regression to the mean: post-on-pre slope of 3PA fouls over expected, rule window vs several non-rule windows,
+# with bootstrap SEs over players (audit: one placebo and no SE was too thin)
+rng=np.random.default_rng(0)
+def slope_win(pre_s,post_s):
+    B=win(X.season.isin(pre_s),'pre').join(win(X.season.isin(post_s),'post'),how='inner').fillna(0)
+    for t in ['pre','post']: B[f'oe_{t}']=100*(B[f'f_3PA_{t}']-B[f'x_3PA_{t}'])/B[f'att_3PA_{t}'].clip(lower=1)
+    B=B[(B.att_3PA_pre>=300)&(B.att_3PA_post>=300)]
+    x=B.oe_pre.to_numpy(); y=B.oe_post.to_numpy(); b=np.polyfit(x,y,1)[0]
+    bs=[np.polyfit(x[i],y[i],1)[0] for i in (rng.integers(0,len(x),len(x)) for _ in range(1000))]
+    return b,np.std(bs),len(x)
+SL=[]
+for lab,pre_s,post_s in [('rule change 2019-21 -> 2021-23',[2019,2020],[2021,2022]),('placebo 2012-14 -> 2014-16',[2012,2013],[2014,2015]),
+                         ('placebo 2014-16 -> 2016-18',[2014,2015],[2016,2017]),('placebo 2016-18 -> 2018-20',[2016,2017],[2018,2019])]:
+    b,se,nn=slope_win(pre_s,post_s); SL.append(dict(window=lab,slope=b,se=se,players=nn)); print(lab,'slope',round(b,3),'+-',round(se,3),'n',nn)
+SL=pd.DataFrame(SL); SL.round(4).to_csv(f'{OUT}/grifter_slopes.csv',index=False)
+pl=SL.iloc[1:]; d=SL.slope.iloc[0]-pl.slope.mean(); dse=np.sqrt(SL.se.iloc[0]**2+(pl.se**2).mean())
+print('rule slope minus mean placebo slope',round(d,3),'+-',round(dse,3))
 # (b) career low-xF foul drawing
 C=X[X.grp.isin(['3PA','MID'])].groupby(['shooter','grp']).agg(att=('w','sum'),f=('f','sum'),x=('x','sum')).unstack('grp').fillna(0)
 C.columns=[f'{a}_{b}' for a,b in C.columns]
