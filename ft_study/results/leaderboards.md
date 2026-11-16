@@ -1,3 +1,30 @@
+### Headline: combined, size- and role-adjusted
+
+Size-adjusted shooting REAVES plus role-adjusted non-shooting REAVES, per 100 on-court possessions (2005-06 onward). This is the headline REAVES.
+
+| # | All-time | | 2025-26 | |
+| --- | --- | --- | --- | --- |
+| 1 | Joel Embiid | 2.12 | James Harden | 2.30 |
+| 2 | James Harden | 2.08 | Luka Doncic | 2.26 |
+| 3 | Luka Doncic | 1.77 | Deni Avdija | 1.97 |
+| 4 | Corey Maggette | 1.65 | Joel Embiid | 1.77 |
+| 5 | Jimmy Butler | 1.47 | Austin Reaves | 1.73 |
+| 6 | Allen Iverson | 1.36 | Giannis Antetokounmpo | 1.71 |
+| 7 | Kevin Martin | 1.27 | Keyonte George | 1.61 |
+| 8 | Chauncey Billups | 1.25 | Devin Booker | 1.59 |
+| 9 | Trae Young | 1.21 | Jerami Grant | 1.56 |
+| 10 | Dwight Howard | 1.18 | Jimmy Butler | 1.55 |
+| 11 | Lou Williams | 1.17 | Shai Gilgeous-Alexander | 1.50 |
+| 12 | Danilo Gallinari | 1.14 | Cam Thomas | 1.36 |
+| 13 | Damian Lillard | 1.11 | Norman Powell | 1.35 |
+| 14 | Gilbert Arenas | 1.10 | Stephen Curry | 1.28 |
+| 15 | Giannis Antetokounmpo | 1.09 | Bennedict Mathurin | 1.24 |
+| 16 | Kobe Bryant | 1.07 | Coby White | 1.24 |
+| 17 | DeMar DeRozan | 1.07 | Paolo Banchero | 1.09 |
+| 18 | Paolo Banchero | 1.03 | Victor Wembanyama | 1.06 |
+| 19 | Paul Pierce | 1.01 | Brandon Williams | 1.05 |
+| 20 | Chris Bosh | 0.98 | Anthony Edwards | 1.03 |
+
 ### Shooting REAVES per 100 attempts
 
 | # | All-time | | 2025-26 | |
@@ -172,29 +199,3 @@
 | 18 | Allen Iverson | 1.11 | Coby White | 1.24 |
 | 19 | Gilbert Arenas | 1.10 | Bennedict Mathurin | 1.16 |
 | 20 | Rudy Gobert | 1.09 | Nikola Jokic | 1.15 |
-
-### Combined, role-adjusted
-
-| # | All-time | | 2025-26 | |
-| --- | --- | --- | --- | --- |
-| 1 | Joel Embiid | 2.45 | Luka Doncic | 2.27 |
-| 2 | James Harden | 2.02 | James Harden | 2.25 |
-| 3 | Luka Doncic | 1.78 | Joel Embiid | 2.05 |
-| 4 | Corey Maggette | 1.61 | Deni Avdija | 1.99 |
-| 5 | Jimmy Butler | 1.45 | Giannis Antetokounmpo | 1.99 |
-| 6 | Dwight Howard | 1.41 | Austin Reaves | 1.62 |
-| 7 | Giannis Antetokounmpo | 1.32 | Jimmy Butler | 1.53 |
-| 8 | Kevin Martin | 1.21 | Jerami Grant | 1.52 |
-| 9 | Chauncey Billups | 1.19 | Devin Booker | 1.49 |
-| 10 | Paolo Banchero | 1.17 | Keyonte George | 1.46 |
-| 11 | Danilo Gallinari | 1.17 | Shai Gilgeous-Alexander | 1.36 |
-| 12 | Chris Bosh | 1.10 | Victor Wembanyama | 1.27 |
-| 13 | DeMarcus Cousins | 1.09 | Norman Powell | 1.26 |
-| 14 | Rudy Gobert | 1.05 | Paolo Banchero | 1.24 |
-| 15 | DeMar DeRozan | 1.03 | Cam Thomas | 1.23 |
-| 16 | Paul Pierce | 1.02 | Zion Williamson | 1.22 |
-| 17 | Allen Iverson | 1.02 | Stephen Curry | 1.19 |
-| 18 | Kobe Bryant | 1.01 | Bennedict Mathurin | 1.16 |
-| 19 | Zion Williamson | 0.99 | Coby White | 1.15 |
-| 20 | Gilbert Arenas | 0.98 | Aaron Gordon | 1.01 |
-
