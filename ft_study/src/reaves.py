@@ -1,7 +1,8 @@
 """REAVES tables: shooting fouls drawn above xFoul, valued in points.
   REAVES_shot  = sum (fouled - xF) * (V_F - V_N)   [immediate: league value of a fouled vs unfouled attempt, zone/season]
   REAVES       = REAVES_shot + (fouls - xF) * D_season, where D_season is the average downstream value of a shooting
-                 foul that season from foul_epa.py (bonus possessions + whistle slope + opponent foul trouble)."""
+                 foul that season from foul_epa.py (bonus possessions + whistle slope + opponent foul trouble).
+  REAVES_shot alone (the foul's own value, no bonus or foul trouble) stays available as `reaves_shot`."""
 import pandas as pd, numpy as np, glob, os
 SUF=os.environ.get('SUF','')
 D='/home/claude/data'; OUT='/home/user/nba_data/ft_study/results'

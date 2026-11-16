@@ -12,7 +12,11 @@ Clean-lineup possessions only (lq == 1), for both actual and expected."""
 import pandas as pd, numpy as np, glob, gc
 from fe import fe_resid
 D='/home/claude/data'; OUT='/home/user/nba_data/ft_study/results'
-FE=pd.read_parquet(f'{D}/foul_epa.parquet',columns=['game_id','period','clk','season','drawer','drawer_team','shoot','skill','epa','action'])
+FE=pd.read_parquet(f'{D}/foul_epa.parquet',columns=['game_id','period','clk','season','drawer','drawer_team','shoot','skill','epa','imm','action'])
+# Value = full foul EPA (immediate + bonus credit + foul trouble). NS_VALUE=imm keeps only the immediate part (bonus free
+# throws), for comparison.
+import os as _os
+if _os.environ.get('NS_VALUE','epa')=='imm': FE['epa']=FE['imm']
 FE=FE[(FE.shoot==0)&(FE.skill==1)&(FE.drawer>0)&(FE.season>=2005)]
 rows=[]; prow=[]
 for y in range(2005,2026):
