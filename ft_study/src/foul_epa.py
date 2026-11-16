@@ -12,6 +12,7 @@
   Late-game intentional fouls (defense trailing, last 2:00 of Q4/OT, non-shooting) and take fouls are flagged and
   excluded from drawer totals (the defense chose them). Foul trouble uses res_minutes_clock.csv (quarter x nth foul x
   3-min clock bin). Valued at league FT% so it measures drawing, not the drawer's FT shooting; 'act' columns use actual points."""
+import os
 import pandas as pd, numpy as np, glob, json, os, gc
 D='/home/claude/data'; OUT='/home/user/nba_data/ft_study/results'
 B=json.load(open(f'{D}/betas.json'))
@@ -109,9 +110,16 @@ F['garbage']=((F.period>=4)&(F.margin.abs()>=20)).astype(int)
 _ft=pd.concat([pd.read_parquet(f'{D}/out/att_{y}.parquet',columns=['shooter','fta','ftm']).assign(season=y) for y in range(1996,2026)])
 _ft=_ft.groupby(['shooter','season'])[['fta','ftm']].sum(); _ft=_ft[_ft.fta>=50]; poor=set(_ft[_ft.ftm/_ft.fta<0.55].index)
 F['hack']=((F.shoot==0)&(F.pen_before==1)&(F.intentional==0)&np.array([(d,s_) in poor for d,s_ in zip(F.drawer,F.season)])).astype(int)
-F['skill']=((F.intentional==0)&(F.take_foul==0)&(F.hack==0)).astype(int)
+# audit Nov 16: also the defense's choice -- 'foul up 3' (defense leading by 3, last 10 s of Q4/OT, non-shooting) and
+# clear-path fouls (action 9, a deliberate foul to stop a breakaway). Away-from-play fouls (action 6) stay as drawn:
+# most are rebounding / post-position fouls on good FT shooters; hacks among them are caught by the hack rule.
+F['up3']=((F.shoot==0)&(F.period>=4)&(F.clk<=10)&(F.margin==-3)).astype(int)
+F['away_play']=F.action.isin([6]).astype(int); F['clear_path']=F.action.isin([9]).astype(int)
+F['intentional']=(F.intentional|F.up3).astype(int)
+F['skill']=((F.intentional==0)&(F.take_foul==0)&(F.hack==0)&(F.clear_path==0)).astype(int)
+if os.environ.get('NS_KEEP_TAKE')=='1': F['skill']=((F.intentional==0)&(F.hack==0)&(F.clear_path==0)).astype(int)   # sensitivity only
 F.drop(columns=['k']).to_parquet(f'{D}/foul_epa.parquet')
-print('flags: hack',round(F.hack.mean(),4),'intentional',round(F.intentional.mean(),4),'take',round(F.take_foul.mean(),4),'garbage',round(F.garbage.mean(),4))
+print('flags: up3',int(F.up3.sum()),'away_play',int(F.away_play.sum()),'clear_path',int(F.clear_path.sum()),' hack',round(F.hack.mean(),4),'intentional',round(F.intentional.mean(),4),'take',round(F.take_foul.mean(),4),'garbage',round(F.garbage.mean(),4))
 print('mean poss lost per foul: flat',round(F.poss_lost_flat.mean(),3),' clock-dependent',round(F.poss_lost.mean(),3))
 pd.set_option('display.width',250)
 F['type']=np.where(F.shoot==1,'shooting',np.where(F.pen_before==1,'bonus_nonshoot','nonbonus_nonshoot'))
