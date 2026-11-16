@@ -14,10 +14,10 @@ fig,ax=plt.subplots(figsize=(max(6.5,0.45*len(m)+3),4.4),dpi=200); fig.patch.set
 ax.bar(range(len(m)),m.hl,width=0.62,color=[LIGHT if p else BLUE for p in m.partial],zorder=3)
 ax.axhline(0,color=INK2,lw=1,zorder=4)
 ax.axhline(car,color=INK2,lw=1,ls=(0,(4,3)),zorder=2)
-ax.text(len(m)-0.55,car+(0.03 if car>=0 else -0.03),f'career {car:+.2f}'.replace('-','−'),ha='right',va='bottom' if car>=0 else 'top',fontsize=8.5,color=INK2)
+ax.text(-0.45,car,f' career {car:+.2f} '.replace('-','−'),ha='left',va='center',fontsize=8.5,color=INK2,zorder=5,bbox=dict(boxstyle='square,pad=0.15',fc=BG,ec='none'))
 for i in {m.hl.idxmax(),m.hl.idxmin()}:
     v=m.hl[i]; ax.text(i,v+(0.025 if v>0 else -0.025),f"{v:+.2f}".replace('-','−'),ha='center',va='bottom' if v>0 else 'top',fontsize=9,color=INK)
-ax.set_xticks(range(len(m))); ax.set_xticklabels(lab,rotation=45,ha='right',fontsize=8.5,color=INK2)
+ax.set_xlim(-1.6,len(m)-0.4); ax.set_xticks(range(len(m))); ax.set_xticklabels(lab,rotation=45,ha='right',fontsize=8.5,color=INK2)
 ax.tick_params(axis='y',labelsize=8.5,colors=INK2,length=0); ax.tick_params(axis='x',length=0)
 ax.yaxis.grid(True,color=GRID,lw=0.8,zorder=0); [s.set_visible(False) for s in ax.spines.values()]
 lo,hi=min(m.hl.min(),car,0),max(m.hl.max(),car,0); pad=0.18*(hi-lo); ax.set_ylim(lo-pad,hi+pad)
