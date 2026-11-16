@@ -15,7 +15,7 @@ xF: linear probability model with FEs: zone x season, zone x possession-age bin 
   (putback context; added Nov 2026). Fractional zone rows are weighted.
   Referee effects (where the PBP names the crew) are added from a ridge fit of game-level residuals.
 REAVES = sum over attempts of (fouled - xF) * (V_F - V_N): league points of a fouled vs unfouled attempt in that zone
-  and season (league FT%), so it values foul drawing only, not the shooter's own FT or finishing skill."""
+  and season (league FT%), counted to the end of the possession (an unfouled miss can be rebounded; audit Nov 16), so it values foul drawing only, not the shooter's own FT or finishing skill."""
 import pandas as pd, numpy as np, glob, gc, json
 from fe import fe_resid
 from collections import defaultdict
@@ -24,7 +24,7 @@ import os
 SUF='_imputed' if os.environ.get('FORCE_IMPUTE')=='1' else ''
 if os.environ.get('RESUME')!='1':
     import pyarrow.parquet as pq
-    cols=['game_id','season','evnum','shooter','kind','made','is3','dist','period','clk','elapsed','start_type','margin','def_tf','def_pen','deff','fouled','fouler','ftm','fta','pts','since_oreb']
+    cols=['game_id','season','evnum','shooter','kind','made','is3','dist','period','clk','elapsed','start_type','margin','def_tf','def_pen','deff','fouled','fouler','ftm','fta','pts','since_oreb','pidx']
     def dfr_rates(s):
         # defenders' shooting fouls committed per defensive possession (season), shrunk with 200 pseudo-possessions
         tb=pq.read_table(f'{D}/out/poss_{s}.parquet',columns=['def_lu']).column('def_lu').combine_chunks()
@@ -36,6 +36,8 @@ if os.environ.get('RESUME')!='1':
     parts=[]
     for f in sorted(glob.glob(f'{D}/out/att_*.parquet')):
         a=pd.read_parquet(f,columns=cols); s=int(a.season.iloc[0])
+        # points from this attempt to the end of its possession (all FT trips included): possession-level value (audit 2)
+        a=a.sort_values(['game_id','pidx','evnum']); a['rem']=a.iloc[::-1].groupby(['game_id','pidx']).pts.cumsum().iloc[::-1].astype(np.float32)
         lu=pq.read_table(f,columns=['def_lu']).column('def_lu').combine_chunks()
         off=lu.offsets.to_numpy(); vals=lu.flatten().to_numpy()
         rt=dfr_rates(s); rv=rt.reindex(vals).to_numpy()
@@ -226,12 +228,17 @@ print('ref games',len(G),'refs',len(refl),'ref effect sd (per attempt)',round(so
 # ---------- value of a foul vs no foul in zone-season
 _ft=pd.concat([pd.read_parquet(f,columns=['season','kind','fta','ftm']) for f in sorted(glob.glob(f'{D}/out/att_*.parquet'))]); _ft=_ft[_ft.kind.isin(['and1','fouled_miss'])]
 lgft=_ft.groupby('season').ftm.sum()/_ft.groupby('season').fta.sum()
-vn=X[(X.kind=='fga')].groupby(['season','z']).pts.mean().rename('VN')
+# possession-level values (audit 2): an unfouled miss can still be rebounded and scored, a fouled attempt rarely continues.
+# VN = mean points from an unfouled FGA to the end of its possession (zone, season); VF = expected points of a fouled
+# attempt at league FT% + the average continuation after fouled attempts (season).
+vn=X[(X.kind=='fga')].groupby(['season','z']).rem.mean().rename('VN')
+_fr=X[X.kind!='fga']; cont_f=((_fr.rem-_fr.pts)*_fr.w).groupby(_fr.season).sum()/_fr.w.groupby(_fr.season).sum()
 X=X.join(vn,on=['season','z'])
 X['pv']=np.where(X.is3==1,3,2)
 X['psi']=[par[s]['psi'][zz] for s,zz in zip(X.season,X.z)]
 X['ftp']=X.season.map(lgft)
-X['VF']=X.psi*(X.pv+X.ftp)+(1-X.psi)*X.pv*X.ftp
+X['VF']=X.psi*(X.pv+X.ftp)+(1-X.psi)*X.pv*X.ftp+X.season.map(cont_f)
+print('continuation after fouled attempts by season',cont_f.round(3).to_dict(),flush=True)
 X['dv']=X.VF-X.VN
 X['reaves_shot']=(X.fouled-X.xf)*X.dv*X.w
 X['xf_w']=X.xf*X.w; X['f_w']=X.fouled*X.w

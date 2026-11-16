@@ -89,3 +89,23 @@ HA.round(3).to_csv(f'{OUT}/whistle_franchise_home_away.csv')
 # (Nov 12 follow-ups, run interactively: regressing team-season effects on team shot style -- drive / pull-up / post /
 #  dunk-tip / transition / rim / 3PA shares -- gave R^2 0.11; on team net rating, corr -0.07. Franchise ranking and the
 #  0.45 year-to-year persistence survive both.)
+# ---- (audit 2) validation gate for any team-level effect: player-split test. Fit the player FE + team-season FE model
+# on two random halves of the PLAYERS and correlate the halves' team-season effects. A team environment (refs, system)
+# would show up in both halves; player-specific season deviations would not. Benchmark: odd/even games (same players).
+def fit_ts(d):
+    yv=(d.rp/d.att).to_numpy(); wv=d.att.to_numpy(); plv=pd.factorize(d.shooter)[0]; tsk,tsv=np.unique(d.ts,return_inverse=True)
+    av=np.zeros(plv.max()+1); bv=np.zeros(len(tsk))
+    for _ in range(300):
+        av=np.bincount(plv,wv*(yv-bv[tsv]))/np.bincount(plv,wv); bn=np.bincount(tsv,wv*(yv-av[plv]))/np.bincount(tsv,wv)
+        if np.abs(bn-bv).max()<1e-10: bv=bn; break
+        bv=bn
+    s_=pd.Series(bv,index=tsk); return s_-s_.groupby(s_.index%10000).transform('mean')
+rng=np.random.default_rng(1); pls=G.shooter.unique(); VAL=[]
+for k in range(4):
+    h=set(rng.choice(pls,len(pls)//2,replace=False)); A_=fit_ts(G[G.shooter.isin(h)]); B_=fit_ts(G[~G.shooter.isin(h)]); j=A_.index.intersection(B_.index)
+    VAL.append(dict(split=f'players #{k+1}',team_season_corr=np.corrcoef(A_[j],B_[j])[0,1],franchise_corr=np.corrcoef(A_[j].groupby(j//10000).mean(),B_[j].groupby(j//10000).mean())[0,1]))
+odd=G.game_id%2==1; A_=fit_ts(G[odd]); B_=fit_ts(G[~odd]); j=A_.index.intersection(B_.index)
+VAL.append(dict(split='games odd/even (benchmark)',team_season_corr=np.corrcoef(A_[j],B_[j])[0,1],franchise_corr=np.corrcoef(A_[j].groupby(j//10000).mean(),B_[j].groupby(j//10000).mean())[0,1]))
+V=pd.DataFrame(VAL); V.round(3).to_csv(f'{OUT}/whistle_validation.csv',index=False); print(V.round(3).to_string(index=False))
+print('VERDICT: team-season / franchise effects are reportable only if the player-split correlation is clearly positive. Here it is not:'
+      ' the "team whistle" is player-season deviations, not a team environment. whistle_franchise*.csv are kept for the record only.')

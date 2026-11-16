@@ -23,25 +23,40 @@ X['ftp_own']=_ps.ftp.reindex(pd.MultiIndex.from_arrays([X.shooter,X.season])).to
 X['ftp_lg']=X.season.map(_lg)
 X['pv']=np.where(X.is3==1,3,2)
 X['reaves_shot_own']=X.reaves_shot+(X.fouled-X.xf)*X.w*(X.ftp_own-X.ftp_lg)*(X.psi+(1-X.psi)*X.pv)
-# ---- size-adjusted xF: an average shooter of the same height and weight (heights.py). Per zone, regress the residual
-# (fouled - xF) on centred height and weight (attempt-weighted); xF_size = xF + fitted. Players without a height: no change.
+# ---- size-adjusted xF: an average shooter of the same build (heights.py). Height and weight are collinear (r ~ .8;
+# audit 2), so they are combined into one size index = first principal component of standardized height and weight.
+# Per zone, the residual (fouled - xF) is regressed on the centred size index (attempt-weighted); xF_size = xF + fitted.
+# Slope uncertainty: player bootstrap (200 draws) on player x zone cells -> per-player intervals for the adjustment.
 _H=pd.read_csv(f'{D}/ext/heights.csv')[['shooter','height_in','weight']].dropna()
-X=X.merge(_H,on='shooter',how='left')
-X['xf_size']=X.xf
-SZ=[]
-for z_,g in X[X.height_in.notna()].groupby('z'):
-    w_=g.w.to_numpy(); hc=g.height_in.to_numpy()-np.average(g.height_in,weights=w_); wc=g.weight.to_numpy()-np.average(g.weight,weights=w_)
-    y_=(g.fouled-g.xf).to_numpy(); M_=np.c_[hc,wc]
-    b_=np.linalg.solve((M_*w_[:,None]).T@M_,(M_*w_[:,None]).T@y_)
-    X.loc[g.index,'xf_size']=g.xf+M_@b_
-    SZ.append(dict(zone=z_,per_inch_per100=100*b_[0],per_10lb_per100=1000*b_[1]))
-pd.DataFrame(SZ).round(4).to_csv(f'{OUT}/size_adjustment{SUF}.csv',index=False); print('size adjustment by zone (fouls per 100 att)',pd.DataFrame(SZ).round(3).to_dict('records'))
+_zh=(_H.height_in-_H.height_in.mean())/_H.height_in.std(); _zw=(_H.weight-_H.weight.mean())/_H.weight.std()
+_H['size']=(_zh+_zw)/np.sqrt(2)          # PC1 of two standardized variables with positive correlation
+X=X.merge(_H[['shooter','size']],on='shooter',how='left')
+X['xf_size']=X.xf; SZ=[]
+_cells=X[X['size'].notna()].assign(res=lambda d:(d.fouled-d.xf)*d.w).groupby(['shooter','z']).agg(att=('w','sum'),res=('res','sum'),size=('size','first')).reset_index()
+BOOT={}
+_rng=np.random.default_rng(7); _pls=_cells.shooter.unique()
+for z_,g in _cells.groupby('z'):
+    m_=np.average(g['size'],weights=g.att); sc=g['size']-m_
+    b_=np.sum(sc*g.res)/np.sum(g.att*sc**2)       # residual per attempt per unit of size
+    bs=[]
+    gi=g.set_index('shooter')
+    for _ in range(200):
+        dr=_rng.choice(_pls,len(_pls)); gg=gi.reindex(dr).dropna()
+        sc2=gg['size']-np.average(gg['size'],weights=gg.att); bs.append(np.sum(sc2*gg.res)/np.sum(gg.att*sc2**2))
+    BOOT[z_]=(b_,np.std(bs),m_)
+    idx=X.index[(X.z==z_)&X['size'].notna()]
+    X.loc[idx,'xf_size']=X.loc[idx,'xf']+b_*(X.loc[idx,'size']-m_)
+    SZ.append(dict(zone=z_,per_sd_size_per100=100*b_,se=100*np.std(bs)))
+pd.DataFrame(SZ).round(4).to_csv(f'{OUT}/size_adjustment{SUF}.csv',index=False); print('size adjustment by zone (fouls per 100 att per SD of size)',pd.DataFrame(SZ).round(3).to_dict('records'))
+# per-player SE of the size adjustment from the slope SEs (zones treated as independent)
+X['size_adj_var']=(X.w*(X['size']-X.z.map({k:v[2] for k,v in BOOT.items()})))
 X['xfs_w']=X.xf_size*X.w
+X['var_r']=(X.xf*(1-X.xf))*(X.w*X.dv)**2   # binomial variance of (fouled - xF) * dv
 X['reaves_shot_size']=(X.fouled-X.xf_size)*X.w*X.dv
 X['reaves_shot_size_own']=X.reaves_shot_size+(X.fouled-X.xf_size)*X.w*(X.ftp_own-X.ftp_lg)*(X.psi+(1-X.psi)*X.pv)
 FE=pd.read_parquet(f'{D}/foul_epa.parquet',columns=['season','shoot','bonus','slope','trouble'])
 Dn=FE[FE.shoot==1].assign(d=lambda t: t.bonus+t.slope+t.trouble).groupby('season').d.mean()
-S=X.groupby(['shooter','season']).agg(xf_size=('xfs_w','sum'),reaves_shot_size=('reaves_shot_size','sum'),reaves_shot_size_own=('reaves_shot_size_own','sum'),reaves_shot_own=('reaves_shot_own','sum'),fm=('fm','sum'),fm_logged=('fm_logged','sum'),att=('w','sum'),fouls=('f_w','sum'),xf=('xf_w','sum'),reaves_shot=('reaves_shot','sum'),gp=('game_id','nunique')).reset_index()
+S=X.groupby(['shooter','season']).agg(var_r=('var_r','sum'),xf_size=('xfs_w','sum'),reaves_shot_size=('reaves_shot_size','sum'),reaves_shot_size_own=('reaves_shot_size_own','sum'),reaves_shot_own=('reaves_shot_own','sum'),fm=('fm','sum'),fm_logged=('fm_logged','sum'),att=('w','sum'),fouls=('f_w','sum'),xf=('xf_w','sum'),reaves_shot=('reaves_shot','sum'),gp=('game_id','nunique')).reset_index()
 S['downstream']=(S.fouls-S.xf)*S.season.map(Dn)
 S['reaves']=S.reaves_shot+S.downstream
 S['reaves_own_ft']=S.reaves_shot_own+S.downstream
@@ -54,9 +69,12 @@ S['reaves_per100poss']=100*S.reaves/S.off_poss; S['reaves_size_per100']=100*S.re
 S['foe']=S.fouls/S.xf; S['name']=S.shooter.map(names)
 S['reaves_per100']=100*S.reaves/S.att; S['reaves_per_g']=S.reaves/S.gp
 S.round(4).to_csv(f'{OUT}/reaves_seasons{SUF}.csv',index=False)
-C=S.groupby('shooter').agg(xf_size=('xf_size','sum'),reaves_size=('reaves_size','sum'),reaves_size_own_ft=('reaves_size_own_ft','sum'),reaves_own_ft=('reaves_own_ft','sum'),off_poss=('off_poss','sum'),first=('season','min'),last=('season','max'),gp=('gp','sum'),att=('att','sum'),fouls=('fouls','sum'),xf=('xf','sum'),reaves_shot=('reaves_shot','sum'),downstream=('downstream','sum'),reaves=('reaves','sum')).reset_index()
+C=S.groupby('shooter').agg(var_r=('var_r','sum'),xf_size=('xf_size','sum'),reaves_size=('reaves_size','sum'),reaves_size_own_ft=('reaves_size_own_ft','sum'),reaves_own_ft=('reaves_own_ft','sum'),off_poss=('off_poss','sum'),first=('season','min'),last=('season','max'),gp=('gp','sum'),att=('att','sum'),fouls=('fouls','sum'),xf=('xf','sum'),reaves_shot=('reaves_shot','sum'),downstream=('downstream','sum'),reaves=('reaves','sum')).reset_index()
 C['name']=C.shooter.map(names); C['foe']=C.fouls/C.xf; C['extra_fouls']=C.fouls-C.xf
-C['reaves_per100']=100*C.reaves/C.att; C['reaves_size_per100']=100*C.reaves_size/C.att; C['reaves_size_per100poss']=100*C.reaves_size/C.off_poss; C['reaves_size_own_ft_per100poss']=100*C.reaves_size_own_ft/C.off_poss; C['reaves_per100poss']=100*C.reaves/C.off_poss; C['reaves_own_ft_per100poss']=100*C.reaves_own_ft/C.off_poss; C['att_per100poss']=100*C.att/C.off_poss; C['reaves_per_g']=C.reaves/C.gp
+C['reaves_per100']=100*C.reaves/C.att; C['reaves_per100_se']=100*np.sqrt(C.var_r)/C.att; C['reaves_size_per100']=100*C.reaves_size/C.att; C['reaves_size_per100poss']=100*C.reaves_size/C.off_poss; C['reaves_size_own_ft_per100poss']=100*C.reaves_size_own_ft/C.off_poss; C['reaves_per100poss']=100*C.reaves/C.off_poss; C['reaves_own_ft_per100poss']=100*C.reaves_own_ft/C.off_poss; C['att_per100poss']=100*C.att/C.off_poss; C['reaves_per_g']=C.reaves/C.gp
+_za=X[X['size'].notna()].groupby(['shooter','z']).agg(k=('size_adj_var','sum'),dv=('dv','mean'))
+_za['v']=[ (k*BOOT[z][1]*dv)**2 for (sh,z),k,dv in zip(_za.index,_za.k,_za.dv)]
+C['size_adj_se_per100']=100*np.sqrt(_za.groupby(level=0).v.sum()).reindex(C.shooter).to_numpy()/C.att
 C=C[C.att>=3000]
 C.round(4).to_csv(f'{OUT}/reaves_career{SUF}.csv',index=False)
 pd.set_option('display.width',250)

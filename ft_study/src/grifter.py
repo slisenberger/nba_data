@@ -79,3 +79,29 @@ fy=X.groupby('shooter').season.agg(first='min',last='max'); C=C.join(fy); C['nam
 C=C[C.low_att>=2000]
 C.reset_index().rename(columns={'shooter':'pid'}).round(4).to_csv(f'{OUT}/grifter_lowxf_career.csv',index=False)
 print(C.sort_values('low_oe100',ascending=False)[['name','first','last','att_3PA','att_MID','f_3PA','x_3PA','oe100_3PA','oe100_MID','low_oe','low_oe100']].head(25).round(2).to_string())
+# ---- (audit 2) within-player difference-in-differences: targeted (3PA + mid-range) minus untargeted (rim + paint)
+# fouls over expected per 100, post - pre; for the top pre-window targeted drawers (top 20%) vs the rest. Non-overlapping
+# two-season windows; placebos before the rule. Bootstrap over players.
+X['tgt']=X.grp.isin(['3PA','MID'])
+def did(pre_s,post_s):
+    rows=[]
+    for lab,m in (('pre',X.season.isin(pre_s)),('post',X.season.isin(post_s))):
+        g=X[m].groupby(['shooter','tgt']).agg(att=('w','sum'),f=('f','sum'),x=('x','sum')).unstack('tgt'); g.columns=[f'{a}_{"t" if b else "u"}_{lab}' for a,b in g.columns]; rows.append(g)
+    W=rows[0].join(rows[1],how='inner').fillna(0)
+    W=W[(W.att_t_pre>=300)&(W.att_t_post>=300)&(W.att_u_pre>=100)&(W.att_u_post>=100)]
+    for t in ('t','u'):
+        for lab in ('pre','post'): W[f'oe_{t}_{lab}']=100*(W[f'f_{t}_{lab}']-W[f'x_{t}_{lab}'])/W[f'att_{t}_{lab}']
+    W['dd']=(W.oe_t_post-W.oe_t_pre)-(W.oe_u_post-W.oe_u_pre)
+    top=W.oe_t_pre>=W.oe_t_pre.quantile(.8)
+    est=W.dd[top].mean()-W.dd[~top].mean()
+    bs=[]; idx=np.arange(len(W))
+    for _ in range(1000):
+        i=rng.integers(0,len(W),len(W)); w2=W.iloc[i]; t2=w2.oe_t_pre>=W.oe_t_pre.quantile(.8)
+        bs.append(w2.dd[t2].mean()-w2.dd[~t2].mean())
+    return est,np.std(bs),len(W),W.dd.mean()
+DD=[]
+for lab,pre_s,post_s in [('placebo 2011-13 -> 2013-15',[2011,2012],[2013,2014]),('placebo 2015-17 -> 2017-19',[2015,2016],[2017,2018]),('rule 2019-21 -> 2021-23',[2019,2020],[2021,2022])]:
+    e,se_,nn,avg=did(pre_s,post_s); DD.append(dict(window=lab,top20_minus_rest=e,se=se_,players=nn,all_players_dd=avg)); print(lab,'top-20% targeted drawers vs rest, DiD',round(e,2),'+-',round(se_,2),'n',nn,' all-player DiD',round(avg,2))
+DD=pd.DataFrame(DD); DD.round(4).to_csv(f'{OUT}/grifter_did.csv',index=False)
+pl=DD.iloc[:2]; gap=DD.top20_minus_rest.iloc[2]-pl.top20_minus_rest.mean(); gse=np.sqrt(DD.se.iloc[2]**2+(pl.se**2).mean()/2)
+print('rule minus placebo mean (top-20% vs rest DiD):',round(gap,2),'+-',round(gse,2))
