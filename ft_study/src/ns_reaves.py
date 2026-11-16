@@ -27,7 +27,8 @@ for y in range(2005,2026):
     tot=m.groupby('pi').agg(ns_epa=('epa','sum'),ns_n=('epa','size'))
     P=P.join(tot,on='pi'); P[['ns_epa','ns_n']]=P[['ns_epa','ns_n']].fillna(0)
     m['lq']=P.lq.to_numpy()[m.pi.to_numpy()]
-    rows.append(m[m.lq==1][['drawer','season','epa']])
+    m['lu']=[P.off_lu.iat[i] for i in m.pi.to_numpy()]
+    rows.append(m[m.lq==1][['drawer','season','epa','lu']])
     prow.append(P[['season','period','start_clk','def_pen','margin','deff','ns_epa','ns_n','off_lu','lq']])
     print(y,'possessions',len(P),'ns fouls matched',len(m),'of',len(f),flush=True)
 P=pd.concat(prow,ignore_index=True); A=pd.concat(rows,ignore_index=True); del prow,rows; gc.collect()
@@ -43,9 +44,49 @@ lu=Q.off_lu.to_numpy()
 ex=pd.DataFrame({'pid':np.concatenate(lu),'season':np.repeat(Q.season.to_numpy(),[len(x) for x in lu]),
                  'x_epa':np.repeat(Q.x_epa.to_numpy()/5,[len(x) for x in lu]),'x_n':np.repeat(Q.x_n.to_numpy()/5,[len(x) for x in lu])})
 E_=ex.groupby(['pid','season']).agg(poss=('x_epa','size'),x_epa=('x_epa','sum'),x_n=('x_n','sum'))
-A_=A.groupby(['drawer','season']).agg(ns_epa=('epa','sum'),ns_n=('epa','size')); A_.index.names=['pid','season']
+# ---- role-adjusted expectation: who among the 5 draws a non-shooting foul, by role (conditional logit).
+# Role features per player-season: usage (shooting attempts / on-court poss), assists and turnovers per on-court poss
+# (ball handling; handling.py), 3PA share, rim+paint share, height, weight
+# (z-scored). Fitted on all non-shooting fouls with clean lineups; expected share of each possession's xNS = softmax.
+R0=pd.read_csv(f'{OUT}/reaves_seasons.csv')[['shooter','season','att','off_poss']].rename(columns={'shooter':'pid'})
+XA=pd.read_parquet(f'{D}/xfoul_att.parquet',columns=['season','shooter','z','w','kind'])
+XA=XA[(XA.kind!='fouled_miss')&(XA.season>=2005)]
+zs=XA.assign(t3=XA.z.isin(['C3','AB3']),rim=XA.z.isin(['RA','PAINT'])).groupby(['shooter','season'])[['t3','rim']].mean().reset_index().rename(columns={'shooter':'pid'})
+H_=pd.read_csv(f'{D}/ext/heights.csv')[['shooter','height_in','weight']].rename(columns={'shooter':'pid'})
+RF=R0.merge(zs,on=['pid','season'],how='outer').merge(H_,on='pid',how='left')
+HD=pd.concat([pd.read_parquet(f) for f in sorted(glob.glob(f'{D}/handling/handling_*.parquet'))])   # handling.py
+RF=RF.merge(HD,on=['pid','season'],how='left')
+RF['usage']=RF.att/RF.off_poss; RF['ast_rate']=RF.ast/RF.off_poss; RF['tov_rate']=RF.tov/RF.off_poss   # ball handling
+feat=['usage','ast_rate','tov_rate','t3','rim','height_in','weight']
+for c in feat: RF[c]=RF[c].fillna(RF[c].median())
+RF[feat]=(RF[feat]-RF[feat].mean())/RF[feat].std()
+RF['usage2']=RF.usage**2; feat2=feat+['usage2']
+fmap={(a,b):v for a,b,v in zip(RF.pid,RF.season,RF[feat2].to_numpy())}
+z0=np.zeros(len(feat2))
+def fm(pid,season): return fmap.get((pid,season),z0)
+ev=A[A.lu.map(len)==5]
+Fm=np.array([[fm(int(p),s) for p in lu] for lu,s in zip(ev.lu,ev.season)])           # events x 5 x k
+ch=np.array([list(lu).index(d) if d in list(lu) else -1 for lu,d in zip(ev.lu,ev.drawer)])
+ok=ch>=0; Fm=Fm[ok]; ch=ch[ok]
+from scipy.optimize import minimize
+def nll(b):
+    u=Fm@b; u=u-u.max(1,keepdims=True); lp=u-np.log(np.exp(u).sum(1,keepdims=True)); return -lp[np.arange(len(ch)),ch].sum()
+def grad(b):
+    u=Fm@b; u=u-u.max(1,keepdims=True); pr=np.exp(u); pr/=pr.sum(1,keepdims=True)
+    return -(Fm[np.arange(len(ch)),ch]-(pr[:,:,None]*Fm).sum(1)).sum(0)
+bh=minimize(nll,np.zeros(len(feat2)),jac=grad,method='BFGS').x
+ll0=len(ch)*np.log(5); print('role model (conditional logit) coefs',dict(zip(feat2,np.round(bh,3))),' pseudo-R2',round(1-nll(bh)/ll0,3),' events',len(ch))
+# role shares for every clean possession lineup
+Qf=Q[Q.off_lu.map(len)==5]
+L=np.array([[fm(int(p),s) for p in lu] for lu,s in zip(Qf.off_lu,Qf.season)])
+u=L@bh; u=u-u.max(1,keepdims=True); sh=np.exp(u); sh/=sh.sum(1,keepdims=True)
+exr=pd.DataFrame({'pid':np.concatenate(Qf.off_lu.to_numpy()),'season':np.repeat(Qf.season.to_numpy(),5),
+                  'x_epa_r':(sh*Qf.x_epa.to_numpy()[:,None]).ravel(),'x_n_r':(sh*Qf.x_n.to_numpy()[:,None]).ravel()})
+E_=E_.join(exr.groupby(['pid','season'])[['x_epa_r','x_n_r']].sum(),how='left')
+A_=A.drop(columns=['lu']).groupby(['drawer','season']).agg(ns_epa=('epa','sum'),ns_n=('epa','size')); A_.index.names=['pid','season']
 S=E_.join(A_,how='left').fillna(0).reset_index()
 S['ns_reaves']=S.ns_epa-S.x_epa; S['ns_excess_fouls']=S.ns_n-S.x_n
+S['ns_reaves_role']=S.ns_epa-S.x_epa_r; S['ns_reaves_role_per100poss']=100*S.ns_reaves_role/S.poss
 S['ns_reaves_per100poss']=100*S.ns_reaves/S.poss; S['ns_excess_per100poss']=100*S.ns_excess_fouls/S.poss
 names=pd.concat([pd.read_parquet(f) for f in sorted(glob.glob(f'{D}/out/names_*.parquet'))]).drop_duplicates('pid').set_index('pid').name
 S['name']=S.pid.map(names)
@@ -54,15 +95,20 @@ R=pd.read_csv(f'{OUT}/reaves_seasons.csv')[['shooter','season','reaves','off_pos
 S=S.merge(R,on=['pid','season'],how='left')
 S['shoot_reaves_per100poss']=100*S.reaves/S.off_poss
 S['combined_per100poss']=S.shoot_reaves_per100poss.fillna(0)+S.ns_reaves_per100poss
+S['combined_role_per100poss']=S.shoot_reaves_per100poss.fillna(0)+S.ns_reaves_role_per100poss
 S.round(4).to_csv(f'{OUT}/ns_reaves_seasons.csv',index=False)
 C=S.groupby('pid').agg(name=('name','first'),first=('season','min'),last=('season','max'),poss=('poss','sum'),ns_n=('ns_n','sum'),x_n=('x_n','sum'),
-                        ns_epa=('ns_epa','sum'),x_epa=('x_epa','sum'),ns_reaves=('ns_reaves','sum'),reaves=('reaves','sum'),off_poss=('off_poss','sum'))
+                        ns_epa=('ns_epa','sum'),x_epa=('x_epa','sum'),ns_reaves=('ns_reaves','sum'),ns_reaves_role=('ns_reaves_role','sum'),x_n_r=('x_n_r','sum'),reaves=('reaves','sum'),off_poss=('off_poss','sum'))
 C=C[C.poss>=15000].copy()
 C['ns_ratio']=C.ns_n/C.x_n; C['ns_reaves_per100poss']=100*C.ns_reaves/C.poss
-C['shoot_reaves_per100poss']=100*C.reaves/C.off_poss; C['combined_per100poss']=C.shoot_reaves_per100poss+C.ns_reaves_per100poss
+C['ns_role_ratio']=C.ns_n/C.x_n_r; C['ns_reaves_role_per100poss']=100*C.ns_reaves_role/C.poss; C['shoot_reaves_per100poss']=100*C.reaves/C.off_poss; C['combined_role_per100poss']=C.shoot_reaves_per100poss+C.ns_reaves_role_per100poss; C['combined_per100poss']=C.shoot_reaves_per100poss+C.ns_reaves_per100poss
 C.reset_index().round(4).to_csv(f'{OUT}/ns_reaves_career.csv',index=False)
 pd.set_option('display.width',250)
 c=['name','first','last','poss','ns_n','x_n','ns_ratio','ns_reaves_per100poss','shoot_reaves_per100poss','combined_per100poss']
 print('CAREER (2005-06+), non-shooting REAVES per 100 poss'); print(C.sort_values('ns_reaves_per100poss',ascending=False)[c].head(20).round(2).to_string(index=False))
 print('bottom'); print(C.sort_values('ns_reaves_per100poss')[c].head(8).round(2).to_string(index=False))
 print('COMBINED'); print(C.sort_values('combined_per100poss',ascending=False)[c].head(20).round(2).to_string(index=False))
+
+c2=['name','first','last','ns_ratio','ns_role_ratio','ns_reaves_per100poss','ns_reaves_role_per100poss','combined_role_per100poss']
+print('ROLE-ADJUSTED non-shooting REAVES'); print(C.sort_values('ns_reaves_role_per100poss',ascending=False)[c2].head(20).round(2).to_string(index=False))
+print(C[C.name.isin(['Trae Young','Chris Paul','Nikola Jokic','Joel Embiid','James Harden','DeMarcus Cousins','Rudy Gobert'])][c2].round(2).to_string(index=False))
