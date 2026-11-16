@@ -92,6 +92,7 @@ for f in fes:
     rw=X[X.src==0].groupby(f).w.sum(); miss=~X.loc[X.src==1,f].map(rw).fillna(0).gt(0)
     if miss.any(): print('  playoff rows in an RS-empty cell of',f,round(miss.mean(),5))
 X['fouled']=X.fouled.astype(float)
+XP=X[X.src==1][fes+['fouled']].reset_index(drop=True); XP['w0']=P.w0.to_numpy(); XP.to_parquet(f'{D}/xfoul_po_cells.parquet'); del XP   # for a playoff-only fit
 X['xf_fit']=X.fouled-fe_resid(X,'fouled',fes,w='w',tol=1e-9)
 rs=X[X.src==0]; print('RS refit vs stored: max abs diff',float(np.abs(rs.xf_fit-rs.xf_base).max()),' mean',float(np.abs(rs.xf_fit-rs.xf_base).mean()),flush=True)
 P['xf_base']=X.loc[X.src==1,'xf_fit'].to_numpy(); del X,R,rs; gc.collect()
