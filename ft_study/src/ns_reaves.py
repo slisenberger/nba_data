@@ -45,18 +45,19 @@ ex=pd.DataFrame({'pid':np.concatenate(lu),'season':np.repeat(Q.season.to_numpy()
                  'x_epa':np.repeat(Q.x_epa.to_numpy()/5,[len(x) for x in lu]),'x_n':np.repeat(Q.x_n.to_numpy()/5,[len(x) for x in lu])})
 E_=ex.groupby(['pid','season']).agg(poss=('x_epa','size'),x_epa=('x_epa','sum'),x_n=('x_n','sum'))
 # ---- role-adjusted expectation: who among the 5 draws a non-shooting foul, by role (conditional logit).
-# Role features per player-season: usage (shooting attempts / on-court poss), assists and turnovers per on-court poss
+# Role features per player-season: usage (FGA / on-court poss; FGA only, no foul-derived attempts), assists and turnovers per on-court poss
 # (ball handling; handling.py), 3PA share, rim+paint share, height, weight
 # (z-scored). Fitted on all non-shooting fouls with clean lineups; expected share of each possession's xNS = softmax.
 R0=pd.read_csv(f'{OUT}/reaves_seasons.csv')[['shooter','season','att','off_poss']].rename(columns={'shooter':'pid'})
 XA=pd.read_parquet(f'{D}/xfoul_att.parquet',columns=['season','shooter','z','w','kind'])
 XA=XA[(XA.kind!='fouled_miss')&(XA.season>=2005)]
-zs=XA.assign(t3=XA.z.isin(['C3','AB3']),rim=XA.z.isin(['RA','PAINT'])).groupby(['shooter','season'])[['t3','rim']].mean().reset_index().rename(columns={'shooter':'pid'})
+zs=XA.assign(t3=XA.z.isin(['C3','AB3']),rim=XA.z.isin(['RA','PAINT'])).groupby(['shooter','season']).agg(t3=('t3','mean'),rim=('rim','mean'),fga=('w','size')).reset_index().rename(columns={'shooter':'pid'})
 H_=pd.read_csv(f'{D}/ext/heights.csv')[['shooter','height_in','weight']].rename(columns={'shooter':'pid'})
 RF=R0.merge(zs,on=['pid','season'],how='outer').merge(H_,on='pid',how='left')
 HD=pd.concat([pd.read_parquet(f) for f in sorted(glob.glob(f'{D}/handling/handling_*.parquet'))])   # handling.py
 RF=RF.merge(HD,on=['pid','season'],how='left')
-RF['usage']=RF.att/RF.off_poss; RF['ast_rate']=RF.ast/RF.off_poss; RF['tov_rate']=RF.tov/RF.off_poss   # ball handling
+RF['usage']=RF.fga/RF.off_poss;   # FGA only: no fouled misses or free throws, which would put the outcome in the control
+RF['ast_rate']=RF.ast/RF.off_poss; RF['tov_rate']=RF.tov/RF.off_poss   # ball handling
 feat=['usage','ast_rate','tov_rate','t3','rim','height_in','weight']
 for c in feat: RF[c]=RF[c].fillna(RF[c].median())
 RF[feat]=(RF[feat]-RF[feat].mean())/RF[feat].std()
