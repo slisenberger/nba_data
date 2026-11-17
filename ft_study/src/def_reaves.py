@@ -9,6 +9,15 @@ same shots. Also raw counts of all personal fouls committed (fouls tables)."""
 import pandas as pd, numpy as np, glob, gc
 D='/home/claude/data'; OUT='/home/user/nba_data/ft_study/results'
 X=pd.read_parquet(f'{D}/xfoul_att.parquet',columns=['game_id','season','shooter','kind','period','clk','w','xf','dv','fouled','fouler','z'])
+# audit Nov 17: the main xF includes the defending team-season and the on-court defenders' own foul-rate decile, which put each
+# defender's fouling into his own expectation. Refit without them (zone x season, possession age x start, clock, margin,
+# bonus, putback) and keep the referee crew term (xf - xf_base) as context.
+from fe import fe_resid
+_C=pd.read_parquet(f'{D}/xfoul_stage1.parquet',columns=['fouled','w','f_zs','f_el','f_cl','f_mb','f_pen','f_pb']); _C['fouled']=_C.fouled.astype(float)
+assert len(_C)==len(X)
+_xnd=_C.fouled.to_numpy()-fe_resid(_C,'fouled',['f_zs','f_el','f_cl','f_mb','f_pen','f_pb'],w='w',tol=1e-9); del _C; gc.collect()
+_xb=pd.read_parquet(f'{D}/xfoul_att.parquet',columns=['xf_base']).xf_base.to_numpy()
+X['xf']=np.clip(_xnd+(X.xf.to_numpy()-_xb),0.001,0.999)
 X['c10']=(X.clk.astype(float)*10).round().astype(np.int64)
 X['xfw']=X.xf*X.w; X['dvw']=X.dv*X.w; X['rimw']=X.w*X.z.isin(['RA','PAINT'])
 for k,zz in {'zRA':['RA'],'zPT':['PAINT'],'zMD':['MID'],'z3':['C3','AB3']}.items(): X[k]=X.w*X.z.isin(zz)
