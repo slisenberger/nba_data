@@ -34,7 +34,7 @@ for y in range(1996,2025):
     pt=rs.drop_duplicates(['game_id','shooter'])[['game_id','shooter','deff']].rename(columns={'shooter':'pid'})
     T1=T1.drop(columns='seg').merge(pt,on=['game_id','pid'],how='left'); T1['seg']=seg_of(T1.game_id.to_numpy(),T1.deff.fillna(-1).to_numpy(),False)
     T2['seg']=seg_of(T2.game_id.to_numpy(),None,True)
-    TT=pd.concat([T1[['game_id','pid','tov','seg']],T2[['game_id','pid','tov','seg']]]).rename(columns={'pid':'shooter'})
+    TT=pd.concat([T1[['game_id','pid','tov','seg']],T2[['game_id','pid','tov','seg']]],ignore_index=True).rename(columns={'pid':'shooter'})   # unique index: the repeat below expands by label
     TT=TT.loc[TT.index.repeat(TT.tov)].assign(kind='tov',pts=0.0,fta=0,u=1.0)[['game_id','shooter','kind','pts','fta','seg','u']]
     a=pd.concat([a,TT],ignore_index=True)
     a['segg']=np.where(a.seg.isin(['po1','po2']),'po',a.seg)
