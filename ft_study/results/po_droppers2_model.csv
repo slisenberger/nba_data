@@ -1,0 +1,13 @@
+term,coef,se,z
+intercept (league-wide playoff gap),-1.2667,0.1275,-9.9379
+RS rTS vs other teams (talent),-0.0129,0.0296,-0.4364
+age (per SD = 4.10),-0.0243,0.1282,-0.1898
+height_in (per SD = 3.58),0.1816,0.1548,1.173
+usage_rs (per SD = 5.79),-0.4271,0.1366,-3.1264
+usage_chg (per SD = 3.06),-0.0597,0.1364,-0.4376
+load_chg (per SD = 8.48),0.7929,0.1266,6.2649
+three_sh (per SD = 0.20),-0.2002,0.1924,-1.0404
+ft_rate (per SD = 0.13),-0.3977,0.237,-1.6783
+foe (per SD = 0.31),0.0541,0.2154,0.2509
+opp_d (per SD = 1.88),0.2992,0.12,2.4934
+season (per SD = 8.22),-0.0836,0.1249,-0.6693
